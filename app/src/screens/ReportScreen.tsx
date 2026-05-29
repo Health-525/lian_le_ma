@@ -1,18 +1,26 @@
 /**
  * 报告页：展示动作分、风险提示、纠正次数、下一次重点（需求 7）。
  */
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
+import { LogoMark, PillBadge, TechLabel, aura } from "../ui/aura";
 import { useAppStore } from "../store/useAppStore";
 import type { RootStackParamList } from "../navigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Report">;
 
-function scoreColor(score: number): string {
-  if (score >= 80) return "#16a34a";
-  if (score >= 60) return "#d97706";
-  return "#dc2626";
+function scoreTone(score: number): { label: string; color: string } {
+  if (score >= 80) return { label: "STABLE", color: "#16a34a" };
+  if (score >= 60) return { label: "ADJUST", color: "#d97706" };
+  return { label: "REBUILD", color: "#ba1a1a" };
 }
 
 export default function ReportScreen({ navigation }: Props) {
@@ -20,103 +28,292 @@ export default function ReportScreen({ navigation }: Props) {
 
   if (!report) {
     return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>暂无报告，请先完成一次训练。</Text>
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.empty}>
+          <LogoMark size={42} inverted />
+          <Text style={styles.emptyTitle}>报告未生成</Text>
+          <Text style={styles.emptyText}>请先完成一次训练会话。</Text>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={styles.lightBtn}
+            onPress={() => navigation.navigate("Training")}
+          >
+            <Text style={styles.lightBtnText}>进入训练</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  const tone = scoreTone(report.formScore);
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.h1}>训练报告</Text>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <LogoMark size={32} inverted />
+          <View style={styles.headerCopy}>
+            <TechLabel light>SESSION_REPORT</TechLabel>
+            <Text style={styles.h1}>训练报告</Text>
+            <Text style={styles.subtitle}>
+              本次动作数据已汇总为动作分、纠正次数与下一次重点。
+            </Text>
+          </View>
+        </View>
 
-      <View style={styles.scoreCard}>
-        <Text style={styles.scoreLabel}>动作分</Text>
-        <Text style={[styles.scoreValue, { color: scoreColor(report.formScore) }]}>
-          {report.formScore}
-        </Text>
-        <Text style={styles.scoreUnit}>/ 100</Text>
-      </View>
+        <View style={styles.scoreCard}>
+          <View style={styles.scoreTop}>
+            <TechLabel>FORM_SCORE</TechLabel>
+            <PillBadge active>{tone.label}</PillBadge>
+          </View>
+          <View style={styles.scoreRow}>
+            <Text style={[styles.scoreValue, { color: tone.color }]}>
+              {report.formScore}
+            </Text>
+            <Text style={styles.scoreUnit}>/100</Text>
+          </View>
+        </View>
 
-      <View style={styles.statRow}>
         <View style={styles.statCard}>
           <Text style={styles.statNum}>{report.correctionCount}</Text>
-          <Text style={styles.statLabel}>纠正次数</Text>
+          <View style={styles.statCopy}>
+            <TechLabel>CORRECTIONS</TechLabel>
+            <Text style={styles.statLabel}>本次训练纠正次数</Text>
+          </View>
         </View>
-      </View>
 
-      <Text style={styles.section}>风险提示</Text>
-      {report.riskNotes.map((note, idx) => (
-        <Text key={idx} style={styles.risk}>
-          • {note}
-        </Text>
-      ))}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <TechLabel>RISK_NOTES</TechLabel>
+            <PillBadge>REF</PillBadge>
+          </View>
+          {report.riskNotes.map((note, idx) => (
+            <Text key={idx} style={styles.infoText}>
+              {note}
+            </Text>
+          ))}
+        </View>
 
-      <Text style={styles.section}>下一次重点</Text>
-      <Text style={styles.focus}>{report.nextFocus}</Text>
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <TechLabel>NEXT_FOCUS</TechLabel>
+            <PillBadge>PLAN</PillBadge>
+          </View>
+          <Text style={styles.infoTitle}>{report.nextFocus}</Text>
+        </View>
 
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={() => navigation.navigate("Plan")}
-      >
-        <Text style={styles.primaryBtnText}>返回计划</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.secondaryBtn}
-        onPress={() => navigation.navigate("Training")}
-      >
-        <Text style={styles.secondaryBtnText}>再练一次</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          style={styles.lightBtn}
+          onPress={() => navigation.navigate("Plan")}
+        >
+          <Text style={styles.lightBtnText}>返回计划</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.86}
+          style={styles.outlineBtn}
+          onPress={() => navigation.navigate("Training")}
+        >
+          <Text style={styles.outlineBtnText}>再练一次</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.disclaimer}>本报告仅供参考，不构成医疗建议。</Text>
-    </ScrollView>
+        <Text style={styles.disclaimer}>本报告仅供参考，不构成医疗建议。</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 48 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center" },
-  emptyText: { color: "#888" },
-  h1: { fontSize: 26, fontWeight: "700", marginBottom: 16 },
-  scoreCard: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingVertical: 24,
-    borderRadius: 16,
-    backgroundColor: "#f9fafb",
-  },
-  scoreLabel: {
-    position: "absolute",
-    top: 12,
-    left: 16,
-    color: "#888",
-    fontSize: 13,
-  },
-  scoreValue: { fontSize: 64, fontWeight: "800" },
-  scoreUnit: { fontSize: 18, color: "#9ca3af", marginBottom: 12, marginLeft: 4 },
-  statRow: { flexDirection: "row", gap: 12, marginTop: 16 },
-  statCard: {
+  safe: {
     flex: 1,
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
+    backgroundColor: "#000000",
+  },
+  container: {
     padding: 16,
-    alignItems: "center",
+    paddingBottom: 34,
   },
-  statNum: { fontSize: 28, fontWeight: "700", color: "#2563eb" },
-  statLabel: { color: "#666", marginTop: 4 },
-  section: { fontSize: 16, fontWeight: "600", marginTop: 24, marginBottom: 8 },
-  risk: { color: "#444", lineHeight: 20, marginBottom: 4 },
-  focus: { color: "#111", fontSize: 15, lineHeight: 22 },
-  primaryBtn: {
-    marginTop: 28,
-    backgroundColor: "#2563eb",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
+  header: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    paddingBottom: 16,
+    paddingTop: 8,
   },
-  primaryBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  secondaryBtn: { marginTop: 12, paddingVertical: 14, alignItems: "center" },
-  secondaryBtnText: { color: "#2563eb", fontSize: 15, fontWeight: "600" },
-  disclaimer: { marginTop: 20, color: "#9ca3af", fontSize: 12, textAlign: "center" },
+  headerCopy: {
+    flex: 1,
+  },
+  h1: {
+    color: aura.colors.surface,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: 0,
+    marginTop: 8,
+  },
+  subtitle: {
+    color: aura.colors.darkMuted,
+    fontFamily: aura.font.ui,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 6,
+  },
+  scoreCard: {
+    backgroundColor: aura.colors.surfaceSoft,
+    borderColor: "rgba(255, 255, 255, 0.72)",
+    borderRadius: aura.radius.lg,
+    borderWidth: 1,
+    padding: 18,
+    shadowColor: aura.colors.blueSoft,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+  scoreTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  scoreRow: {
+    alignItems: "flex-end",
+    flexDirection: "row",
+    justifyContent: "center",
+    paddingVertical: 14,
+  },
+  scoreValue: {
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 68,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 78,
+  },
+  scoreUnit: {
+    color: aura.colors.inkMuted,
+    fontFamily: aura.font.mono,
+    fontSize: 16,
+    marginBottom: 12,
+    marginLeft: 6,
+  },
+  statCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: aura.radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 14,
+    padding: 16,
+  },
+  statNum: {
+    color: aura.colors.surface,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 38,
+    fontWeight: "900",
+    minWidth: 62,
+    textAlign: "center",
+  },
+  statCopy: {
+    flex: 1,
+  },
+  statLabel: {
+    color: "rgba(255, 255, 255, 0.72)",
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 15,
+    fontWeight: "800",
+    marginTop: 6,
+  },
+  infoCard: {
+    backgroundColor: aura.colors.surfaceSoft,
+    borderRadius: aura.radius.md,
+    marginTop: 14,
+    padding: 16,
+  },
+  cardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  infoText: {
+    color: aura.colors.ink,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 23,
+    marginBottom: 6,
+  },
+  infoTitle: {
+    color: aura.colors.ink,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 26,
+  },
+  lightBtn: {
+    alignItems: "center",
+    backgroundColor: aura.colors.surface,
+    borderRadius: aura.radius.pill,
+    justifyContent: "center",
+    marginTop: 16,
+    minHeight: 52,
+    shadowColor: "#ffffff",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 5,
+  },
+  lightBtnText: {
+    color: aura.colors.ink,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  outlineBtn: {
+    alignItems: "center",
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    borderRadius: aura.radius.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    marginTop: 12,
+    minHeight: 50,
+  },
+  outlineBtnText: {
+    color: "rgba(255, 255, 255, 0.78)",
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  disclaimer: {
+    color: aura.colors.darkMuted,
+    fontFamily: aura.font.ui,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 18,
+    textAlign: "center",
+  },
+  empty: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyTitle: {
+    color: aura.colors.surface,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 24,
+    fontWeight: "900",
+    marginTop: 22,
+  },
+  emptyText: {
+    color: aura.colors.darkMuted,
+    fontFamily: aura.font.ui,
+    fontSize: 14,
+    lineHeight: 22,
+    marginTop: 10,
+    textAlign: "center",
+  },
 });

@@ -19,7 +19,13 @@ export default function App() {
   return (
     <NavigationContainer>
       <StatusBar style="auto" />
-      <Stack.Navigator initialRouteName="Assessment">
+      <Stack.Navigator
+        initialRouteName="Assessment"
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#f7f9fc" },
+        }}
+      >
         <Stack.Screen
           name="Assessment"
           component={AssessmentScreen}
