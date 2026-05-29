@@ -1,5 +1,5 @@
 /**
- * 评估页：按 Stitch 的 Aura Lumina 视觉方向重做首屏，同时保留本地计划生成流程。
+ * 新用户运动评估：三步式 Aura glass UI，保留本地计划生成流程。
  */
 import { useState } from "react";
 import {
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
-import { LogoMark, PillBadge, TechLabel, aura } from "../ui/aura";
+import { TechLabel, aura } from "../ui/aura";
 import { useAppStore } from "../store/useAppStore";
 import type {
   Equipment,
@@ -24,43 +24,46 @@ import type { RootStackParamList } from "../navigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Assessment">;
 
+const STEPS = ["目标", "参数", "恢复"];
+
 const GOALS: {
   value: TrainingGoal;
   label: string;
   description: string;
-  code: string;
+  glyph: string;
 }[] = [
   {
     value: "fat_loss",
     label: "减脂",
-    description: "最大限度燃烧热量并改善心血管健康。",
-    code: "CUT",
+    description: "最大化热量消耗并改善心血管健康。",
+    glyph: "火",
   },
   {
     value: "muscle_gain",
     label: "增肌",
-    description: "专注于肌肉肥大的训练，以增加围度和力量。",
-    code: "BUILD",
+    description: "专注于肌肥大训练以增加肌肉量和力量。",
+    glyph: "力",
   },
   {
     value: "general_fitness",
     label: "大众健康",
-    description: "灵活度、力量和耐力的平衡方法。",
-    code: "BASE",
+    description: "兼顾灵活性、力量和耐力的平衡方法。",
+    glyph: "心",
   },
   {
     value: "endurance",
     label: "柔韧性",
-    description: "专注于关节活动度、健康与恢复。",
-    code: "MOBILITY",
+    description: "专注于运动范围、关节健康和恢复。",
+    glyph: "伸",
   },
 ];
 
-const VENUES: { value: Venue; label: string }[] = [
-  { value: "home", label: "居家" },
-  { value: "gym", label: "健身房" },
-  { value: "outdoor", label: "户外" },
+const VENUES: { value: Venue; label: string; description: string }[] = [
+  { value: "home", label: "居家", description: "低器械、低噪音训练。" },
+  { value: "gym", label: "健身房", description: "可用完整力量器械。" },
+  { value: "outdoor", label: "户外", description: "跑跳和体能训练优先。" },
 ];
+
 const EQUIPMENTS: { value: Equipment; label: string }[] = [
   { value: "none", label: "徒手" },
   { value: "dumbbell", label: "哑铃" },
@@ -76,6 +79,37 @@ const INJURIES: { value: InjuryRiskArea; label: string }[] = [
   { value: "neck", label: "颈" },
 ];
 const FREQUENCIES = [1, 2, 3, 4, 5, 6, 7];
+
+function OptionCard({
+  title,
+  description,
+  glyph,
+  selected,
+  onPress,
+}: {
+  title: string;
+  description: string;
+  glyph: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      style={[styles.optionCard, selected && styles.optionCardActive]}
+      onPress={onPress}
+    >
+      <Text style={styles.cardGlyph}>{glyph}</Text>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.cardText}>{description}</Text>
+      <View style={[styles.checkMark, selected && styles.checkMarkActive]}>
+        <Text style={[styles.checkText, selected && styles.checkTextActive]}>
+          {selected ? "✓" : ""}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 function ChoiceChip({
   label,
@@ -99,38 +133,11 @@ function ChoiceChip({
   );
 }
 
-function GoalCard({
-  label,
-  description,
-  code,
-  selected,
-  onPress,
-}: {
-  label: string;
-  description: string;
-  code: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      style={[styles.goalCard, selected && styles.goalCardSelected]}
-      onPress={onPress}
-    >
-      <View style={styles.goalTop}>
-        <LogoMark size={32} />
-        <PillBadge active={selected}>{code}</PillBadge>
-      </View>
-      <Text style={styles.goalTitle}>{label}</Text>
-      <Text style={styles.goalDescription}>{description}</Text>
-    </TouchableOpacity>
-  );
-}
-
 export default function AssessmentScreen({ navigation }: Props) {
   const submitAssessment = useAppStore((s) => s.submitAssessment);
+  const reset = useAppStore((s) => s.reset);
 
+  const [step, setStep] = useState(0);
   const [goal, setGoal] = useState<TrainingGoal>("fat_loss");
   const [venue, setVenue] = useState<Venue>("home");
   const [equipment, setEquipment] = useState<Equipment[]>(["none"]);
@@ -152,12 +159,18 @@ export default function AssessmentScreen({ navigation }: Props) {
       prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
     );
 
-  const onSubmit = () => {
-    if (!goal || !venue || !frequency) {
-      setError("请完成必填项：训练目标、训练场地、每周频率。");
+  const onClose = () => {
+    reset();
+    setStep(0);
+  };
+
+  const onNext = () => {
+    setError(null);
+    if (step < STEPS.length - 1) {
+      setStep((current) => current + 1);
       return;
     }
-    setError(null);
+
     submitAssessment({
       goal,
       venue,
@@ -168,110 +181,178 @@ export default function AssessmentScreen({ navigation }: Props) {
     navigation.navigate("Plan");
   };
 
+  const onBack = () => {
+    setError(null);
+    setStep((current) => Math.max(0, current - 1));
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.brandBar}>
-        <LogoMark size={28} />
+      <View style={styles.header}>
+        <TouchableOpacity
+          accessibilityLabel="关闭评估"
+          activeOpacity={0.82}
+          style={styles.iconButton}
+          onPress={onClose}
+        >
+          <Text style={styles.iconButtonText}>×</Text>
+        </TouchableOpacity>
         <Text style={styles.brandTitle}>练了吗</Text>
-        <View style={styles.brandSpacer} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView
-        style={styles.body}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <TechLabel light style={styles.heroCode}>
-            SYS_INIT_ASSESSMENT
-          </TechLabel>
-          <Text style={styles.heroTitle}>根据您的预期目标校准计划参数。</Text>
-          <Text style={styles.heroText}>
-            选择主目标后，系统会结合训练场地、器械和恢复风险生成 7 天计划。
+        <View style={styles.progressBlock}>
+          <TechLabel style={styles.progressCode}>SYS_INIT_ASSESSMENT</TechLabel>
+          <View style={styles.progressSegments}>
+            {STEPS.map((label, index) => (
+              <View
+                key={label}
+                style={[
+                  styles.progressSegment,
+                  index <= step && styles.progressSegmentActive,
+                ]}
+              />
+            ))}
+          </View>
+          <Text style={styles.progressText}>
+            第{step + 1}步 // 共{STEPS.length}步
           </Text>
         </View>
 
-        <View style={styles.goalList}>
-          {GOALS.map((g) => (
-            <GoalCard
-              key={g.value}
-              label={g.label}
-              description={g.description}
-              code={g.code}
-              selected={goal === g.value}
-              onPress={() => setGoal(g.value)}
-            />
-          ))}
-        </View>
-
-        <View style={styles.panel}>
-          <View style={styles.panelHeader}>
-            <View>
-              <TechLabel>PLAN_INPUTS</TechLabel>
-              <Text style={styles.panelTitle}>训练参数</Text>
+        {step === 0 && (
+          <>
+            <View style={styles.contentHeader}>
+              <Text style={styles.screenTitle}>选择主要目标</Text>
+              <Text style={styles.screenSubtitle}>
+                根据您的期望目标校准计划参数。
+              </Text>
             </View>
-            <PillBadge>{frequency}D/WEEK</PillBadge>
-          </View>
 
-          <Text style={styles.section}>训练场地</Text>
-          <View style={styles.row}>
-            {VENUES.map((v) => (
-              <ChoiceChip
-                key={v.value}
-                label={v.label}
-                selected={venue === v.value}
-                onPress={() => setVenue(v.value)}
-              />
-            ))}
-          </View>
+            <View style={styles.optionGrid}>
+              {GOALS.map((g) => (
+                <OptionCard
+                  key={g.value}
+                  title={g.label}
+                  description={g.description}
+                  glyph={g.glyph}
+                  selected={goal === g.value}
+                  onPress={() => setGoal(g.value)}
+                />
+              ))}
+            </View>
+          </>
+        )}
 
-          <Text style={styles.section}>每周频率</Text>
-          <View style={styles.row}>
-            {FREQUENCIES.map((f) => (
-              <ChoiceChip
-                key={f}
-                label={`${f} 天`}
-                selected={frequency === f}
-                onPress={() => setFrequency(f)}
-              />
-            ))}
-          </View>
+        {step === 1 && (
+          <>
+            <View style={styles.contentHeader}>
+              <Text style={styles.screenTitle}>校准训练参数</Text>
+              <Text style={styles.screenSubtitle}>
+                场地和频率会决定 7 天计划的训练日与动作强度。
+              </Text>
+            </View>
 
-          <Text style={styles.section}>可用器械</Text>
-          <View style={styles.row}>
-            {EQUIPMENTS.map((e) => (
-              <ChoiceChip
-                key={e.value}
-                label={e.label}
-                selected={equipment.includes(e.value)}
-                onPress={() => toggleEquipment(e.value)}
-              />
-            ))}
-          </View>
+            <View style={styles.stack}>
+              {VENUES.map((v) => (
+                <OptionCard
+                  key={v.value}
+                  title={v.label}
+                  description={v.description}
+                  glyph={v.label.slice(0, 1)}
+                  selected={venue === v.value}
+                  onPress={() => setVenue(v.value)}
+                />
+              ))}
+            </View>
 
-          <Text style={styles.section}>伤痛风险自评</Text>
-          <Text style={styles.consent}>
-            可跳过。该信息只用于规避相关动作，不构成医疗建议。
-          </Text>
-          <View style={styles.row}>
-            {INJURIES.map((i) => (
-              <ChoiceChip
-                key={i.value}
-                label={i.label}
-                selected={injuries.includes(i.value)}
-                onPress={() => toggleInjury(i.value)}
-              />
-            ))}
-          </View>
+            <View style={styles.panel}>
+              <TechLabel>WEEKLY_FREQUENCY</TechLabel>
+              <Text style={styles.sectionTitle}>每周训练频率</Text>
+              <View style={styles.row}>
+                {FREQUENCIES.map((f) => (
+                  <ChoiceChip
+                    key={f}
+                    label={`${f} 天`}
+                    selected={frequency === f}
+                    onPress={() => setFrequency(f)}
+                  />
+                ))}
+              </View>
+            </View>
+          </>
+        )}
 
-          {error && <Text style={styles.error}>{error}</Text>}
+        {step === 2 && (
+          <>
+            <View style={styles.contentHeader}>
+              <Text style={styles.screenTitle}>补充恢复信息</Text>
+              <Text style={styles.screenSubtitle}>
+                器械用于匹配动作，伤痛风险可跳过，仅用于规避相关动作。
+              </Text>
+            </View>
 
+            <View style={styles.panel}>
+              <TechLabel>AVAILABLE_EQUIPMENT</TechLabel>
+              <Text style={styles.sectionTitle}>可用器械</Text>
+              <View style={styles.row}>
+                {EQUIPMENTS.map((e) => (
+                  <ChoiceChip
+                    key={e.value}
+                    label={e.label}
+                    selected={equipment.includes(e.value)}
+                    onPress={() => toggleEquipment(e.value)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.panel}>
+              <TechLabel>RISK_SELF_CHECK</TechLabel>
+              <Text style={styles.sectionTitle}>伤痛风险自评</Text>
+              <Text style={styles.consent}>
+                该信息只用于规避相关动作，不构成医疗建议。
+              </Text>
+              <View style={styles.row}>
+                {INJURIES.map((i) => (
+                  <ChoiceChip
+                    key={i.value}
+                    label={i.label}
+                    selected={injuries.includes(i.value)}
+                    onPress={() => toggleInjury(i.value)}
+                  />
+                ))}
+              </View>
+            </View>
+          </>
+        )}
+
+        {error && <Text style={styles.error}>{error}</Text>}
+
+        <View style={styles.navigationRow}>
+          {step === 0 ? (
+            <View style={styles.navSpacer} />
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={styles.secondaryButton}
+              onPress={onBack}
+            >
+              <Text style={styles.secondaryButtonText}>上一步</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             activeOpacity={0.88}
-            style={styles.primaryBtn}
-            onPress={onSubmit}
+            style={styles.primaryButton}
+            onPress={onNext}
           >
-            <Text style={styles.primaryBtnText}>生成我的 7 天计划</Text>
+            <Text style={styles.primaryButtonText}>
+              {step === STEPS.length - 1 ? "生成计划" : "下一步"}
+            </Text>
+            <Text style={styles.primaryArrow}>→</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -284,142 +365,195 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: aura.colors.background,
   },
-  brandBar: {
+  header: {
     alignItems: "center",
-    backgroundColor: aura.colors.background,
+    backgroundColor: "rgba(255, 255, 255, 0.62)",
+    borderBottomColor: "rgba(255, 255, 255, 0.7)",
+    borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 70,
+    minHeight: 64,
     paddingHorizontal: 20,
+  },
+  iconButton: {
+    alignItems: "center",
+    backgroundColor: aura.colors.glassInput,
+    borderRadius: aura.radius.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  iconButtonText: {
+    color: aura.colors.ink,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 24,
+    lineHeight: 28,
   },
   brandTitle: {
     color: aura.colors.ink,
     fontFamily: aura.font.uiHeavy,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
     letterSpacing: 0,
   },
-  brandSpacer: {
-    width: 28,
-  },
-  body: {
-    flex: 1,
-    backgroundColor: "#000000",
+  headerSpacer: {
+    width: 40,
   },
   container: {
-    paddingBottom: 28,
+    padding: 20,
+    paddingBottom: 34,
   },
-  hero: {
+  progressBlock: {
     alignItems: "center",
-    minHeight: 232,
-    justifyContent: "center",
-    paddingHorizontal: 22,
+    marginBottom: 36,
   },
-  heroCode: {
-    marginBottom: 72,
+  progressCode: {
+    marginBottom: 12,
   },
-  heroTitle: {
-    color: "rgba(255, 255, 255, 0.36)",
-    fontFamily: aura.font.uiHeavy,
-    fontSize: 21,
-    fontWeight: "800",
-    lineHeight: 28,
-    textAlign: "center",
-  },
-  heroText: {
-    color: "rgba(255, 255, 255, 0.42)",
-    fontFamily: aura.font.ui,
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 10,
-    maxWidth: 340,
-    textAlign: "center",
-  },
-  goalList: {
-    gap: 14,
-    marginTop: -38,
-    paddingHorizontal: 16,
-  },
-  goalCard: {
-    backgroundColor: aura.colors.surfaceSoft,
-    borderColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: aura.radius.lg,
-    borderWidth: 1,
-    minHeight: 138,
-    overflow: "hidden",
-    padding: 22,
-    shadowColor: aura.colors.blueSoft,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    elevation: 4,
-  },
-  goalCardSelected: {
-    borderColor: "rgba(42, 111, 229, 0.26)",
-    shadowColor: aura.colors.blue,
-    shadowOpacity: 0.34,
-  },
-  goalTop: {
-    alignItems: "center",
+  progressSegments: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 18,
+    gap: 4,
+    maxWidth: 360,
+    width: "100%",
   },
-  goalTitle: {
+  progressSegment: {
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    borderRadius: 3,
+    flex: 1,
+    height: 6,
+  },
+  progressSegmentActive: {
+    backgroundColor: aura.colors.ink,
+    shadowColor: aura.colors.ink,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+  },
+  progressText: {
+    color: "rgba(5, 6, 8, 0.48)",
+    fontFamily: aura.font.mono,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    marginTop: 10,
+  },
+  contentHeader: {
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  screenTitle: {
     color: aura.colors.ink,
     fontFamily: aura.font.uiHeavy,
-    fontSize: 23,
+    fontSize: 31,
     fontWeight: "900",
     letterSpacing: 0,
+    lineHeight: 38,
+    textAlign: "center",
   },
-  goalDescription: {
-    color: "rgba(5, 6, 8, 0.56)",
+  screenSubtitle: {
+    color: aura.colors.inkMuted,
+    fontFamily: aura.font.ui,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  optionGrid: {
+    gap: 14,
+  },
+  stack: {
+    gap: 12,
+  },
+  optionCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.66)",
+    borderColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 24,
+    borderWidth: 1,
+    minHeight: 150,
+    overflow: "hidden",
+    padding: 22,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  optionCardActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderColor: aura.colors.ink,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    transform: [{ translateY: -2 }],
+  },
+  cardGlyph: {
+    color: aura.colors.ink,
     fontFamily: aura.font.uiHeavy,
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 23,
-    marginTop: 6,
+    fontSize: 35,
+    fontWeight: "900",
+    lineHeight: 44,
+    marginBottom: 12,
+  },
+  cardTitle: {
+    color: aura.colors.ink,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  cardText: {
+    color: aura.colors.inkMuted,
+    fontFamily: aura.font.ui,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 7,
+  },
+  checkMark: {
+    alignItems: "center",
+    borderColor: "rgba(5, 6, 8, 0.18)",
+    borderRadius: aura.radius.pill,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    position: "absolute",
+    right: 16,
+    top: 16,
+    width: 24,
+  },
+  checkMarkActive: {
+    backgroundColor: aura.colors.ink,
+    borderColor: aura.colors.ink,
+  },
+  checkText: {
+    color: "transparent",
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  checkTextActive: {
+    color: aura.colors.surface,
   },
   panel: {
-    backgroundColor: aura.colors.surfaceSoft,
-    borderRadius: aura.radius.lg,
-    marginHorizontal: 16,
-    marginTop: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.66)",
+    borderColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 24,
+    borderWidth: 1,
+    marginTop: 14,
     padding: 18,
-    shadowColor: "#ffffff",
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    elevation: 3,
   },
-  panelHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 16,
-    marginBottom: 8,
-  },
-  panelTitle: {
+  sectionTitle: {
     color: aura.colors.ink,
     fontFamily: aura.font.uiHeavy,
-    fontSize: 22,
+    fontSize: 17,
     fontWeight: "900",
-    marginTop: 6,
-  },
-  section: {
-    color: aura.colors.ink,
-    fontFamily: aura.font.uiHeavy,
-    fontSize: 15,
-    fontWeight: "800",
-    marginBottom: 9,
-    marginTop: 18,
+    marginTop: 10,
+    marginBottom: 12,
   },
   consent: {
     color: aura.colors.inkMuted,
     fontFamily: aura.font.ui,
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   row: {
     flexDirection: "row",
@@ -451,24 +585,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     marginTop: 18,
+    textAlign: "center",
   },
-  primaryBtn: {
+  navigationRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 36,
+  },
+  navSpacer: {
+    flex: 1,
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
+    borderColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: aura.radius.pill,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 54,
+    justifyContent: "center",
+  },
+  secondaryButtonText: {
+    color: aura.colors.inkMuted,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  primaryButton: {
     alignItems: "center",
     backgroundColor: aura.colors.ink,
     borderRadius: aura.radius.pill,
-    marginTop: 22,
-    minHeight: 52,
+    flex: 2,
+    flexDirection: "row",
+    gap: 8,
     justifyContent: "center",
-    shadowColor: aura.colors.blue,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.22,
-    shadowRadius: 28,
+    minHeight: 56,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
     elevation: 5,
   },
-  primaryBtnText: {
+  primaryButtonText: {
     color: aura.colors.surface,
     fontFamily: aura.font.uiHeavy,
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: "900",
+  },
+  primaryArrow: {
+    color: aura.colors.surface,
+    fontFamily: aura.font.uiHeavy,
+    fontSize: 20,
+    fontWeight: "900",
   },
 });
