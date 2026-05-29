@@ -1,4 +1,5 @@
 ﻿import os
+import base64
 import time
 import hashlib
 import subprocess
@@ -10,9 +11,8 @@ import imageio_ffmpeg
 from flask import Flask, request, render_template, jsonify, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
-# 引入自定义模块
-from src.rtmpose_tran import RTM_Pose_Tran
 from src.datapro import PreProcess
+from src.live_coach import EXERCISES as LIVE_EXERCISES, LiveCoachEngine, LiveCoachSessionStore
 from src.score import Score
 from src.model import ST_GCN
 from src.local_llm import chat_with_ollama_model
@@ -24,7 +24,15 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULT_FOLDER'], exist_ok=True)  # 确保目录存在
 
-RUNTIME_DIR = os.getenv("POSE_RUNTIME_DIR", r"D:\PoseClassifierRuntime")
+def _resolve_runtime_dir():
+    configured_runtime_dir = os.getenv("POSE_RUNTIME_DIR")
+    if configured_runtime_dir:
+        return configured_runtime_dir
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pose_runtime")
+
+
+RUNTIME_DIR = _resolve_runtime_dir()
+os.makedirs(RUNTIME_DIR, exist_ok=True)
 FFMPEG_DIR = os.path.join(RUNTIME_DIR, "ffmpeg")
 app.config['COMPAT_VIDEO_FOLDER'] = os.path.join(RUNTIME_DIR, "compat_videos")
 os.makedirs(FFMPEG_DIR, exist_ok=True)
@@ -55,6 +63,52 @@ ACTION_CLASSES = {
 
 session_histories = {}
 model, device = None, None
+pose_transformer = None
+live_pose_estimator = None
+live_session_store = LiveCoachSessionStore()
+live_coach_engine = LiveCoachEngine()
+
+
+def get_pose_transformer():
+    global pose_transformer
+    if pose_transformer is None:
+        from src.rtmpose_tran import RTM_Pose_Tran
+
+        pose_transformer = RTM_Pose_Tran
+    return pose_transformer
+
+
+def get_live_pose_estimator():
+    global live_pose_estimator
+    if live_pose_estimator is None:
+        from src.rtmpose_tran import body
+
+        live_pose_estimator = body
+    return live_pose_estimator
+
+
+def decode_image_data(image_data):
+    if not image_data or "," not in image_data:
+        raise ValueError("无效的图像数据")
+
+    _, encoded = image_data.split(",", 1)
+    try:
+        image_bytes = base64.b64decode(encoded)
+    except Exception as exc:
+        raise ValueError("图像解码失败") from exc
+
+    frame = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError("无法读取图像帧")
+    return frame
+
+
+def extract_live_pose(image_data):
+    frame = decode_image_data(image_data)
+    keypoints, _ = get_live_pose_estimator()(frame)
+    if len(keypoints) == 0:
+        return None
+    return np.asarray(keypoints[0], dtype=np.float32)
 
 
 def _detect_video_codec_tag(video_path):
@@ -259,6 +313,43 @@ def create_visualization(video_path, keypoints, filename):
     return ""
 
 
+def process_video_file(filepath, filename):
+    start_time = time.time()
+    good_vid, keypoints = get_pose_transformer()(filepath, display_pose=False)
+
+    if not good_vid:
+        raise ValueError("无法提取骨骼关键点")
+
+    pp_keypoints = PreProcess(keypoints)
+    action, conf = model.predict(pp_keypoints)
+    action_id = int(action[0][0])
+    conf_val = float(conf[0][0])
+    print(f"[DEBUG] action={action_id}, conf={conf_val:.4f}")
+    score = Score(keypoints, action_id, conf_val)
+    print(f"[DEBUG] score={score:.4f}")
+
+    if action_id == 14 or (score < 0.3 and conf_val < 0.3):
+        action_id = 14
+        score = 0.0
+
+    heart_rate = estimate_heart_rate(keypoints)
+    duration = time.time() - start_time
+    vis_image_path = create_visualization(filepath, keypoints, filename)
+    feedback_data = generate_feedback(action_id, score, heart_rate)
+
+    return {
+        'filename': filename,
+        'action_id': action_id,
+        'action_name': ACTION_CLASSES[action_id],
+        'score': score,
+        'heart_rate': heart_rate,
+        'duration': duration,
+        'frame_count': keypoints.shape[0],
+        'feedback': feedback_data,
+        'vis_image': vis_image_path,
+    }
+
+
 # --- 路由 ---
 
 @app.route('/local_videos/<path:filename>')
@@ -273,69 +364,117 @@ def serve_video(filename):
 
 @app.route('/')
 def index():
-    return render_template('index.html', result=None)
+    return render_template('index.html', result=None, error=None, exercises=LIVE_EXERCISES)
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'video' not in request.files: return render_template('index.html', error="未选择文件")
+    if 'video' not in request.files: return render_template('index.html', result=None, error="未选择文件", exercises=LIVE_EXERCISES)
     file = request.files['video']
-    if file.filename == '': return render_template('index.html', error="文件名为空")
+    if file.filename == '': return render_template('index.html', result=None, error="文件名为空", exercises=LIVE_EXERCISES)
 
     filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
     try:
-        start_time = time.time()
-        good_vid, keypoints = RTM_Pose_Tran(filepath, display_pose=False)
-
-        if not good_vid: return render_template('index.html', error="无法提取骨骼关键点")
-
-        pp_keypoints = PreProcess(keypoints)
-        action, conf = model.predict(pp_keypoints)
-        action_id = int(action[0][0])
-        conf_val = float(conf[0][0])
-        print(f"[DEBUG] action={action_id}, conf={conf_val:.4f}")
-        score = Score(keypoints, action_id, conf_val)
-        print(f"[DEBUG] score={score:.4f}")
-
-        if action_id == 14 or (score < 0.3 and conf_val < 0.3):
-            action_id = 14
-            score = 0.0
-
-        heart_rate = estimate_heart_rate(keypoints)
-        duration = time.time() - start_time
-
-        # 截取可视化图像
-        vis_image_path = create_visualization(filepath, keypoints, filename)
-        feedback_data = generate_feedback(action_id, score, heart_rate)
-
-        result_data = {
-            'filename': filename,
-            'action_id': action_id,
-            'action_name': ACTION_CLASSES[action_id],
-            'score': score,
-            'heart_rate': heart_rate,
-            'duration': duration,
-            'frame_count': keypoints.shape[0],
-            'feedback': feedback_data,
-            'vis_image': vis_image_path  # 传回前端渲染
-        }
-
-        try:
-            os.remove(filepath)
-        except:
-            pass
-
-        return render_template('index.html', result=result_data)
-
+        result_data = process_video_file(filepath, filename)
+        return render_template('index.html', result=result_data, exercises=LIVE_EXERCISES)
     except Exception as e:
+        return render_template('index.html', result=None, error=f"处理发生错误: {str(e)}", exercises=LIVE_EXERCISES)
+    finally:
         try:
             os.remove(filepath)
-        except:
+        except OSError:
             pass
-        return render_template('index.html', error=f"处理发生错误: {str(e)}")
+
+
+@app.route('/webcam-upload', methods=['POST'])
+def webcam_upload():
+    if 'video' not in request.files: return render_template('index.html', result=None, error="未选择文件", exercises=LIVE_EXERCISES)
+    file = request.files['video']
+    if file.filename == '': return render_template('index.html', result=None, error="文件名为空", exercises=LIVE_EXERCISES)
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    try:
+        result_data = process_video_file(filepath, filename)
+        return render_template('index.html', result=result_data, exercises=LIVE_EXERCISES)
+    except Exception as e:
+        return render_template('index.html', result=None, error=f"处理发生错误: {str(e)}", exercises=LIVE_EXERCISES)
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+
+
+@app.route('/api/session/start', methods=['POST'])
+def api_session_start():
+    payload = request.get_json(silent=True) or {}
+    exercise = str(payload.get('exercise', '')).strip()
+
+    try:
+        session = live_session_store.start(exercise)
+    except ValueError as exc:
+        return jsonify({
+            'error': str(exc),
+            'supported_exercises': list(LIVE_EXERCISES),
+        }), 400
+
+    return jsonify({
+        'session_id': session.session_id,
+        'exercise': session.exercise,
+        'exercise_label': LIVE_EXERCISES[session.exercise]['label'],
+        'tip': LIVE_EXERCISES[session.exercise]['tip'],
+    })
+
+
+@app.route('/api/session/frame', methods=['POST'])
+def api_session_frame():
+    payload = request.get_json(silent=True) or {}
+    session_id = str(payload.get('session_id', '')).strip()
+    image_data = payload.get('image_data')
+
+    if not session_id:
+        return jsonify({'error': '缺少 session_id'}), 400
+    if not image_data:
+        return jsonify({'error': '缺少 image_data'}), 400
+
+    try:
+        session = live_session_store.get(session_id)
+    except KeyError:
+        return jsonify({'error': '会话不存在或已过期'}), 404
+
+    try:
+        keypoints = extract_live_pose(image_data)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    result = live_coach_engine.evaluate(session.exercise, keypoints, session)
+    return jsonify({
+        **result,
+        'exercise': session.exercise,
+        'exercise_label': LIVE_EXERCISES[session.exercise]['label'],
+    })
+
+
+@app.route('/api/session/stop', methods=['POST'])
+def api_session_stop():
+    payload = request.get_json(silent=True) or {}
+    session_id = str(payload.get('session_id', '')).strip()
+    if not session_id:
+        return jsonify({'error': '缺少 session_id'}), 400
+
+    try:
+        session = live_session_store.stop(session_id)
+    except KeyError:
+        return jsonify({'error': '会话不存在或已过期'}), 404
+
+    summary = live_coach_engine.build_summary(session)
+    return jsonify({'summary': summary})
 
 
 @app.route('/chat', methods=['POST'])
