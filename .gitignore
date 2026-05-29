@@ -46,13 +46,14 @@ coverage/
 # Misc
 *.local
 
-# Python (backend/)
+# Python (backend/ 与模型项目)
 __pycache__/
 *.pyc
 *.pyo
 .venv/
 venv/
 *.db
+.pytest_cache/
 
 # Expo / React Native (app/)
 .expo/
@@ -65,3 +66,27 @@ web-build/
 
 # Python packaging metadata (editable install)
 *.egg-info/
+
+# ---- 模型 / 姿态识别项目 (origin/dev) ----
+# 大体积媒体与中间产物
+*.mp4
+*.mov
+*.MOV
+*.avi
+*.mkv
+*.csv
+*.whl
+/res/
+/pose9/
+/vid/
+/uploads/
+/static/results/
+/训练数据集/
+/分别组合/
+dataset/video_annotations.json
+data/.DS_Store
+dataset/readme.md
+/.pose_runtime/
+/datas/
+/tools/mmfit_pose_11cls/
+/tools/mmfit_pose_11cls_stride48/
