@@ -1,33 +1,32 @@
 /**
- * 动作分析 Provider 抽象（对应 design.md 的 Form_Analysis_Provider 契约）。
+ * 动作分析 Provider 抽象。
  *
- * 设计意图：训练页只依赖这个接口，不关心动作判定来自本地桩还是远程模型。
- * - 现在：使用 StubFormProvider（本地确定性假数据，标准/不标准交替），保证 demo 立即可跑。
- * - 以后：模型团队给出接口后，用 HttpFormProvider 实现同一接口接入，训练页代码不改。
- *
- * 切换方式见 ./index.ts 中的 getFormProvider()。
+ * 训练页只依赖这个接口，不关心判定来自本地桩还是远程模型。
+ * - 未配置模型地址：StubFormProvider（本地假数据，扫码即跑）。
+ * - 配了 EXPO_PUBLIC_MODEL_BASE_URL：ModelCoachProvider（直连 web_app.py）。
+ * 切换逻辑见 ./index.ts。
  */
 import type { SupportedExercise } from "../types";
 
 export type ConfidenceLevel = "low" | "medium" | "high";
 export type FormStatus = "conclusive" | "inconclusive";
+export type StatusColor = "idle" | "good" | "warn" | "alert";
 
 export interface ProblemArea {
   area: string;
   severity: ConfidenceLevel;
 }
 
-/** 分析输入：动作类型 + 采集上下文（帧或图像数据，按模型需要扩展）。 */
+/** 分析输入：动作类型 + 采集上下文。 */
 export interface FormContext {
   exercise: SupportedExercise;
-  /** 可选：采集到的帧数（桩用它演示"帧数不足→inconclusive"）。 */
+  /** 采集到的帧数（桩用它演示"帧数不足 → inconclusive"）。 */
   frameCount?: number;
-  /** 可选：base64 图像或关键点等，留给真实模型实现使用。 */
+  /** base64 图像（纯 base64 或 dataURL 都可），真实模型逐帧分析用。 */
   imageBase64?: string;
-  keypoints?: unknown[];
 }
 
-/** 分析输出：与后端 FormAnalysisResult 对齐。 */
+/** 分析输出：统一的动作分析结果。 */
 export interface FormAnalysisResult {
   isStandard: boolean;
   confidence: ConfidenceLevel;
@@ -35,6 +34,20 @@ export interface FormAnalysisResult {
   status: FormStatus;
   /** 纠正反馈文本（不标准且 conclusive 时非空）。 */
   correctionText?: string;
+  /** 模型决定此刻应播报的内容（已含播报节流/冷却）。 */
+  speakText?: string;
+  /** 实时统计：已完成的动作次数。 */
+  repCount?: number;
+  /** 动作阶段（如 down/up/ready）。 */
+  phase?: string;
+  /** 状态色：idle/good/warn/alert，用于 UI 着色。 */
+  statusColor?: StatusColor;
+  /** 主提示。 */
+  primaryCue?: string;
+  /** 副提示。 */
+  secondaryCue?: string;
+  /** 自动识别模式下模型识别出的动作标签。 */
+  activeExerciseLabel?: string;
 }
 
 /** Provider 契约：所有实现都暴露这一个方法。 */
