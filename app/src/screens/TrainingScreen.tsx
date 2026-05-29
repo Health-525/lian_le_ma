@@ -16,12 +16,6 @@ import { aura } from "../ui/aura";
 type Props = NativeStackScreenProps<RootStackParamList, "Training">;
 
 const CURRENT_EXERCISE: SupportedExercise = "squat";
-const EXERCISE_LABEL: Record<SupportedExercise, string> = {
-  squat: "深蹲",
-  lunge: "弓步蹲",
-  overhead_press: "推举",
-  push_up: "俯卧撑",
-};
 
 function coachCopy(last: FormAnalysisResult | null): {
   label: string;
@@ -208,7 +202,13 @@ export default function TrainingScreen({ navigation }: Props) {
         <View style={styles.coachHeader}>
           <Text style={styles.coachIcon}>思</Text>
           <Text style={styles.coachTitle}>AI 教练</Text>
-          <Text style={styles.exerciseLabel}>{EXERCISE_LABEL[CURRENT_EXERCISE]}</Text>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            style={styles.voiceModeButton}
+            onPress={() => navigation.navigate("VoiceCoaching")}
+          >
+            <Text style={styles.voiceModeText}>语音模式</Text>
+          </TouchableOpacity>
         </View>
 
         <View
@@ -632,8 +632,16 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "900",
   },
-  exerciseLabel: {
-    color: "rgba(255, 255, 255, 0.48)",
+  voiceModeButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    borderRadius: aura.radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  voiceModeText: {
+    color: "rgba(255, 255, 255, 0.76)",
     fontFamily: aura.font.mono,
     fontSize: 10,
     letterSpacing: 1,

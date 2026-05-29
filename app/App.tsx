@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import AssessmentScreen from "./src/screens/AssessmentScreen";
 import PlanScreen from "./src/screens/PlanScreen";
 import TrainingScreen from "./src/screens/TrainingScreen";
+import VoiceCoachingScreen from "./src/screens/VoiceCoachingScreen";
 import ReportScreen from "./src/screens/ReportScreen";
 import type { RootStackParamList } from "./src/navigation";
 
@@ -40,6 +41,11 @@ export default function App() {
           name="Training"
           component={TrainingScreen}
           options={{ title: "训练" }}
+        />
+        <Stack.Screen
+          name="VoiceCoaching"
+          component={VoiceCoachingScreen}
+          options={{ title: "语音教练" }}
         />
         <Stack.Screen
           name="Report"
