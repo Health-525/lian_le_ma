@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "练了吗",
+    "slug": "lian-le-ma",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "lianlema",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lianlema.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "练了吗需要使用摄像头进行动作纠错，仅在训练动作分析功能首次使用时申请，可单独授权。",
+        "NSMicrophoneUsageDescription": "练了吗需要使用麦克风以识别训练中的语音命令，仅在语音命令功能首次使用时申请，可单独授权。",
+        "NSHealthShareUsageDescription": "练了吗需要读取部分健康数据（如体能/活动信息）以个性化训练计划，仅在你单独同意后申请。",
+        "NSHealthUpdateUsageDescription": "练了吗需要写入训练相关的健康数据（如锻炼记录），仅在你单独同意后申请。"
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
+    },
+    "android": {
+      "package": "com.lianlema.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "练了吗需要使用摄像头进行动作纠错（分项授权，仅训练动作分析时申请）。"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "练了吗需要使用麦克风以识别训练中的语音命令（分项授权）。",
+          "speechRecognitionPermission": "练了吗需要语音识别以将语音转为训练控制命令（分项授权）。"
+        }
+      ],
+      "expo-asset",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}

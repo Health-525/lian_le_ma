@@ -45,3 +45,23 @@ coverage/
 
 # Misc
 *.local
+
+# Python (backend/)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.db
+
+# Expo / React Native (app/)
+.expo/
+.expo-shared/
+web-build/
+
+# Keep environment templates tracked (do not ignore example files)
+!.env.example
+!.env.*.example
+
+# Python packaging metadata (editable install)
+*.egg-info/
