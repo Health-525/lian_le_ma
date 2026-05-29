@@ -97,9 +97,50 @@ def make_press_pose(bad_lockout=False, lean_back=False):
     return pose
 
 
+def make_row_pose(elbows_flared=False, shallow=False):
+    pose = _empty_pose()
+    pose[5] = [155.0, 165.0]
+    pose[6] = [215.0, 165.0]
+    pose[11] = [170.0, 235.0]
+    pose[12] = [210.0, 235.0]
+    pose[13] = [175.0, 330.0]
+    pose[14] = [210.0, 330.0]
+    pose[15] = [178.0, 430.0]
+    pose[16] = [212.0, 430.0]
+    elbow_x = 118.0 if elbows_flared else 162.0
+    wrist_x = 96.0 if shallow else 148.0
+    pose[7] = [elbow_x, 205.0]
+    pose[8] = [230.0, 205.0]
+    pose[9] = [wrist_x, 220.0]
+    pose[10] = [244.0, 220.0]
+    return pose
+
+
+def make_curl_pose(elbow_forward=False, half_rep=False):
+    pose = _empty_pose()
+    pose[5] = [170.0, 120.0]
+    pose[6] = [220.0, 120.0]
+    pose[11] = [178.0, 220.0]
+    pose[12] = [212.0, 220.0]
+    pose[13] = [184.0, 320.0]
+    pose[14] = [210.0, 320.0]
+    pose[15] = [188.0, 430.0]
+    pose[16] = [208.0, 430.0]
+    pose[7] = [195.0 if elbow_forward else 176.0, 190.0]
+    pose[8] = [214.0, 190.0]
+    pose[9] = [203.0, 165.0 if half_rep else 142.0]
+    pose[10] = [222.0, 142.0]
+    return pose
+
+
 class LiveCoachEngineTests(unittest.TestCase):
-    def test_exercise_catalog_contains_four_mvp_movements(self):
-        self.assertEqual(sorted(EXERCISES), ["lunge", "press", "pushup", "squat"])
+    def test_exercise_catalog_contains_mmfit_specialized_and_generic_actions(self):
+        self.assertIn("squats", EXERCISES)
+        self.assertIn("dumbbell_rows", EXERCISES)
+        self.assertIn("bicep_curls", EXERCISES)
+        self.assertIn("situps", EXERCISES)
+        self.assertIn("other", EXERCISES)
+        self.assertEqual(EXERCISES["squats"]["label"], "深蹲")
 
     def test_unknown_exercise_is_rejected(self):
         store = LiveCoachSessionStore()
@@ -109,74 +150,102 @@ class LiveCoachEngineTests(unittest.TestCase):
 
     def test_squat_bottom_to_ready_counts_one_rep(self):
         store = LiveCoachSessionStore()
-        session = store.start("squat", now=1.0)
+        session = store.start("squats", now=1.0)
         engine = LiveCoachEngine()
 
-        engine.evaluate("squat", make_squat_pose(knee_angle=95.0), session, now=2.0)
-        payload = engine.evaluate("squat", make_squat_pose(knee_angle=170.0), session, now=3.0)
+        engine.evaluate("squats", make_squat_pose(knee_angle=95.0), session, now=2.0)
+        payload = engine.evaluate("squats", make_squat_pose(knee_angle=170.0), session, now=3.0)
 
         self.assertEqual(payload["phase"], "ready")
         self.assertEqual(payload["rep_count"], 1)
 
     def test_persistent_squat_error_speaks_after_threshold_and_respects_cooldown(self):
         store = LiveCoachSessionStore()
-        session = store.start("squat", now=1.0)
+        session = store.start("squats", now=1.0)
         engine = LiveCoachEngine()
         pose = make_squat_pose(knee_angle=118.0, knee_span=70.0, ankle_span=180.0)
 
-        first = engine.evaluate("squat", pose, session, now=2.0)
-        second = engine.evaluate("squat", pose, session, now=3.0)
-        third = engine.evaluate("squat", pose, session, now=4.0)
-        fourth = engine.evaluate("squat", pose, session, now=9.5)
+        first = engine.evaluate("squats", pose, session, now=2.0)
+        second = engine.evaluate("squats", pose, session, now=3.0)
+        third = engine.evaluate("squats", pose, session, now=4.0)
+        fourth = engine.evaluate("squats", pose, session, now=9.5)
 
         self.assertEqual(first["speak_text"], "")
-        self.assertIn("knee", second["speak_text"].lower())
+        self.assertIn("膝", second["speak_text"])
         self.assertEqual(third["speak_text"], "")
-        self.assertIn("knee", fourth["speak_text"].lower())
+        self.assertIn("膝", fourth["speak_text"])
 
     def test_lunge_short_stride_triggers_stride_cue(self):
         store = LiveCoachSessionStore()
-        session = store.start("lunge", now=1.0)
+        session = store.start("lunges", now=1.0)
         engine = LiveCoachEngine()
 
-        payload = engine.evaluate("lunge", make_lunge_pose(short_stride=True), session, now=2.0)
+        payload = engine.evaluate("lunges", make_lunge_pose(short_stride=True), session, now=2.0)
 
         self.assertEqual(payload["phase"], "bottom")
-        self.assertIn("longer", payload["primary_cue"].lower())
+        self.assertIn("步", payload["primary_cue"])
 
     def test_pushup_sagging_body_triggers_body_line_cue(self):
         store = LiveCoachSessionStore()
-        session = store.start("pushup", now=1.0)
+        session = store.start("pushups", now=1.0)
         engine = LiveCoachEngine()
 
-        payload = engine.evaluate("pushup", make_pushup_pose(sag=True), session, now=2.0)
+        payload = engine.evaluate("pushups", make_pushup_pose(sag=True), session, now=2.0)
 
-        self.assertIn("line", payload["primary_cue"].lower())
+        self.assertIn("一条线", payload["primary_cue"])
 
     def test_press_without_lockout_triggers_lockout_cue(self):
         store = LiveCoachSessionStore()
-        session = store.start("press", now=1.0)
+        session = store.start("dumbbell_shoulder_press", now=1.0)
         engine = LiveCoachEngine()
 
-        payload = engine.evaluate("press", make_press_pose(bad_lockout=True), session, now=2.0)
+        payload = engine.evaluate("dumbbell_shoulder_press", make_press_pose(bad_lockout=True), session, now=2.0)
 
         self.assertEqual(payload["phase"], "rising")
-        self.assertIn("lockout", payload["primary_cue"].lower())
+        self.assertIn("伸直", payload["primary_cue"])
+
+    def test_row_flared_elbows_trigger_row_cue(self):
+        store = LiveCoachSessionStore()
+        session = store.start("dumbbell_rows", now=1.0)
+        engine = LiveCoachEngine()
+
+        payload = engine.evaluate("dumbbell_rows", make_row_pose(elbows_flared=True), session, now=2.0)
+
+        primary = payload["primary_cue"]
+        self.assertTrue("手肘" in primary or "肋" in primary)
+
+    def test_curl_elbow_drift_triggers_curl_cue(self):
+        store = LiveCoachSessionStore()
+        session = store.start("bicep_curls", now=1.0)
+        engine = LiveCoachEngine()
+
+        payload = engine.evaluate("bicep_curls", make_curl_pose(elbow_forward=True), session, now=2.0)
+
+        self.assertIn("手肘", payload["primary_cue"])
+
+    def test_generic_action_returns_generic_guidance(self):
+        store = LiveCoachSessionStore()
+        session = store.start("situps", now=1.0)
+        engine = LiveCoachEngine()
+
+        payload = engine.evaluate("situps", make_pushup_pose(), session, now=2.0)
+
+        self.assertTrue("节奏" in payload["primary_cue"] or "稳定" in payload["primary_cue"])
 
     def test_stop_summary_reports_top_errors(self):
         store = LiveCoachSessionStore()
-        session = store.start("squat", now=1.0)
+        session = store.start("squats", now=1.0)
         engine = LiveCoachEngine()
         pose = make_squat_pose(knee_angle=118.0, knee_span=70.0, ankle_span=180.0)
 
-        engine.evaluate("squat", pose, session, now=2.0)
-        engine.evaluate("squat", pose, session, now=3.0)
+        engine.evaluate("squats", pose, session, now=2.0)
+        engine.evaluate("squats", pose, session, now=3.0)
         summary = engine.build_summary(session, finished_at=6.0)
 
-        self.assertEqual(summary["exercise"], "squat")
+        self.assertEqual(summary["exercise"], "squats")
         self.assertGreaterEqual(summary["duration_seconds"], 5.0)
         self.assertTrue(summary["top_mistakes"])
-        self.assertIn("knees", summary["top_mistakes"][0]["label"].lower())
+        self.assertIn("膝", summary["top_mistakes"][0]["label"])
 
 
 if __name__ == "__main__":

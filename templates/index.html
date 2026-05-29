@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Fitness Coach</title>
+    <title>实时健身动作纠错</title>
     <style>
         :root {
             color-scheme: light;
@@ -312,7 +312,7 @@
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
         }
 
@@ -463,10 +463,10 @@
         <section class="stage">
             <header class="stage-header">
                 <div>
-                    <h1 class="stage-title">Real-Time Form Coach</h1>
-                    <p class="stage-copy">Pick one movement, open the camera, and get live corrections while you move.</p>
+                    <h1 class="stage-title">实时健身动作纠错</h1>
+                    <p class="stage-copy">选择动作并打开摄像头，训练过程中就能实时收到识别、纠错和语音提醒。</p>
                 </div>
-                <div class="pill" id="cameraStatePill">Camera offline</div>
+                <div class="pill" id="cameraStatePill">摄像头未开启</div>
             </header>
 
             <div class="video-stage">
@@ -475,24 +475,24 @@
                 <div class="stage-overlay">
                     <div class="overlay-top">
                         <div class="overlay-stack">
-                            <div class="pill warn" id="statusBadge">Waiting</div>
-                            <div class="pill" id="exerciseBadge">Select a movement</div>
+                            <div class="pill warn" id="statusBadge">等待中</div>
+                            <div class="pill" id="exerciseBadge">请选择动作</div>
                         </div>
                         <div class="overlay-card">
-                            <span class="overlay-label">Reps</span>
+                            <span class="overlay-label">次数</span>
                             <div class="overlay-value" id="repCountOverlay">0</div>
                         </div>
                     </div>
                     <div class="overlay-bottom">
                         <div class="overlay-card">
-                            <span class="overlay-label">Primary Cue</span>
-                            <div class="overlay-value" id="primaryCueOverlay">Open the camera to begin.</div>
-                            <div class="overlay-sub" id="secondaryCueOverlay">Live feedback appears here during the set.</div>
+                            <span class="overlay-label">主提示</span>
+                            <div class="overlay-value" id="primaryCueOverlay">打开摄像头后开始训练。</div>
+                            <div class="overlay-sub" id="secondaryCueOverlay">训练开始后，实时纠错会显示在这里。</div>
                         </div>
                         <div class="overlay-card">
-                            <span class="overlay-label">Phase</span>
-                            <div class="overlay-value" id="phaseOverlay">ready</div>
-                            <div class="overlay-sub" id="setStateOverlay">Set idle</div>
+                            <span class="overlay-label">阶段</span>
+                            <div class="overlay-value" id="phaseOverlay">准备</div>
+                            <div class="overlay-sub" id="setStateOverlay">尚未开始训练</div>
                         </div>
                     </div>
                 </div>
@@ -500,12 +500,16 @@
 
             <div class="setup-strip">
                 <div class="setup-copy">
-                    <span class="setup-label">Setup Tip</span>
-                    <span class="setup-tip" id="exerciseTip">Choose a movement to load the camera framing tip.</span>
+                    <span class="setup-label">站位提示</span>
+                    <span class="setup-tip" id="exerciseTip">请选择动作，加载对应的入镜提示。</span>
+                </div>
+                <div class="setup-copy">
+                    <span class="setup-label">识别状态</span>
+                    <span class="setup-tip" id="recognizedAction">手动模式</span>
                 </div>
                 <label class="toggle">
                     <input type="checkbox" id="voiceToggle" checked>
-                    Voice reminders enabled
+                    开启语音提醒
                 </label>
             </div>
         </section>
@@ -516,8 +520,14 @@
             {% endif %}
 
             <section class="rail-section">
-                <h2 class="section-heading">Session Controls</h2>
-                <label class="field-label" for="exerciseSelect">Movement</label>
+                <h2 class="section-heading">训练控制</h2>
+                <label class="field-label" for="modeSelect">识别模式</label>
+                <select id="modeSelect">
+                    <option value="manual">手动模式</option>
+                    <option value="auto">自动识别</option>
+                </select>
+
+                <label class="field-label" for="exerciseSelect">训练动作</label>
                 <select id="exerciseSelect">
                     {% for exercise_id, meta in exercises.items() %}
                         <option value="{{ exercise_id }}">{{ meta.label }}</option>
@@ -525,64 +535,68 @@
                 </select>
 
                 <div class="button-grid">
-                    <button type="button" class="btn-secondary" id="openCameraBtn">Open Camera</button>
-                    <button type="button" class="btn-primary" id="startSetBtn">Start Set</button>
-                    <button type="button" class="btn-secondary" id="pauseSetBtn" disabled>Pause</button>
-                    <button type="button" class="btn-secondary" id="endSetBtn" disabled>End Set</button>
+                    <button type="button" class="btn-secondary" id="openCameraBtn">打开摄像头</button>
+                    <button type="button" class="btn-primary" id="startSetBtn">开始训练</button>
+                    <button type="button" class="btn-secondary" id="pauseSetBtn" disabled>暂停训练</button>
+                    <button type="button" class="btn-secondary" id="endSetBtn" disabled>结束训练</button>
                 </div>
 
-                <p class="status-copy" id="cameraStatus">No active set. Camera permission is required for live coaching.</p>
+                <p class="status-copy" id="cameraStatus">当前没有进行中的训练。开始前需要先允许浏览器访问摄像头。</p>
             </section>
 
             <section class="rail-section">
-                <h2 class="section-heading">Live Metrics</h2>
+                <h2 class="section-heading">实时状态</h2>
                 <div class="metrics-grid">
                     <div class="metric">
-                        <span class="metric-label">Reps</span>
+                        <span class="metric-label">次数</span>
                         <div class="metric-value" id="repCount">0</div>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Phase</span>
-                        <div class="metric-value" id="phaseText">ready</div>
+                        <span class="metric-label">阶段</span>
+                        <div class="metric-value" id="phaseText">准备</div>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Status</span>
-                        <div class="metric-value" id="statusText">idle</div>
+                        <span class="metric-label">状态</span>
+                        <div class="metric-value" id="statusText">空闲</div>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">识别模式</span>
+                        <div class="metric-value" id="recognizedActionMetric">手动</div>
                     </div>
                 </div>
             </section>
 
             <section class="rail-section">
-                <h2 class="section-heading">Live Cues</h2>
-                <p class="feedback-main" id="primaryCue">Open the camera to begin.</p>
-                <p class="feedback-sub" id="secondaryCue">We will keep the current cue short so you can adjust mid-rep.</p>
+                <h2 class="section-heading">实时纠错</h2>
+                <p class="feedback-main" id="primaryCue">打开摄像头后开始训练。</p>
+                <p class="feedback-sub" id="secondaryCue">提示会尽量简短，方便你在动作过程中马上调整。</p>
                 <ul class="cue-log" id="cueLog"></ul>
             </section>
 
             <section class="rail-section summary-panel" id="summaryPanel" hidden>
-                <h2 class="section-heading">Set Summary</h2>
+                <h2 class="section-heading">训练总结</h2>
                 <div class="summary-grid">
                     <div class="summary-item">
-                        <span class="metric-label">Completed Reps</span>
+                        <span class="metric-label">完成次数</span>
                         <div class="metric-value" id="summaryReps">0</div>
                     </div>
                     <div class="summary-item">
-                        <span class="metric-label">Set Duration</span>
+                        <span class="metric-label">训练时长</span>
                         <div class="metric-value" id="summaryDuration">0.0s</div>
                     </div>
                 </div>
-                <p class="feedback-main" id="summaryNextFocus">Next focus appears here.</p>
-                <p class="feedback-sub" id="summaryEncouragement">Finish a set to see your wrap-up.</p>
+                <p class="feedback-main" id="summaryNextFocus">下一组重点会显示在这里。</p>
+                <p class="feedback-sub" id="summaryEncouragement">完成一组训练后，这里会给你总结。</p>
                 <ul class="summary-list" id="summaryMistakes"></ul>
             </section>
 
             {% if result %}
                 <section class="rail-section">
-                    <h2 class="section-heading">Legacy Upload Result</h2>
+                    <h2 class="section-heading">视频上传结果</h2>
                     <div class="legacy-result">
-                        <p><strong>Action:</strong> {{ result.action_name }}</p>
-                        <p><strong>Score:</strong> {{ result.score | round(2) }}</p>
-                        <p><strong>Duration:</strong> {{ result.duration | round(1) }}s</p>
+                        <p><strong>动作：</strong> {{ result.action_name }}</p>
+                        <p><strong>评分：</strong> {{ result.score | round(2) }}</p>
+                        <p><strong>时长：</strong> {{ result.duration | round(1) }}秒</p>
                     </div>
                 </section>
             {% endif %}
@@ -594,6 +608,7 @@
         const cameraPreview = document.getElementById("cameraPreview");
         const frameCanvas = document.getElementById("frameCanvas");
         const canvasContext = frameCanvas.getContext("2d");
+        const modeSelect = document.getElementById("modeSelect");
         const exerciseSelect = document.getElementById("exerciseSelect");
         const openCameraBtn = document.getElementById("openCameraBtn");
         const startSetBtn = document.getElementById("startSetBtn");
@@ -603,6 +618,8 @@
         const cameraStatus = document.getElementById("cameraStatus");
         const cameraStatePill = document.getElementById("cameraStatePill");
         const exerciseTip = document.getElementById("exerciseTip");
+        const recognizedAction = document.getElementById("recognizedAction");
+        const recognizedActionMetric = document.getElementById("recognizedActionMetric");
         const exerciseBadge = document.getElementById("exerciseBadge");
         const repCount = document.getElementById("repCount");
         const repCountOverlay = document.getElementById("repCountOverlay");
@@ -630,6 +647,49 @@
         let paused = false;
         let voiceEnabled = true;
 
+        const phaseLabels = {
+            ready: "准备",
+            bottom: "底部",
+            top: "顶点",
+            lowering: "下降",
+            rising: "上升",
+            pulling: "拉起",
+            curling: "弯举",
+        };
+
+        const statusLabels = {
+            idle: "空闲",
+            good: "稳定",
+            warn: "提醒",
+            alert: "警告",
+        };
+
+        const coachingModeLabels = {
+            auto: "自动识别",
+            manual: "手动",
+            generic: "通用指导",
+            specialized: "专项纠错",
+            fallback: "回退动作",
+            warming: "预热中",
+            offline: "模型离线",
+        };
+
+        function modeLabel() {
+            return modeSelect.value === "auto" ? "自动识别" : "手动模式";
+        }
+
+        function phaseLabel(phase) {
+            return phaseLabels[phase] || phase || "准备";
+        }
+
+        function statusLabel(status) {
+            return statusLabels[status] || status || "空闲";
+        }
+
+        function coachingModeLabel(mode) {
+            return coachingModeLabels[mode] || mode || "手动";
+        }
+
         function setBadgeState(mode, text) {
             statusBadge.textContent = text;
             statusBadge.className = "pill";
@@ -649,13 +709,21 @@
         function updateExerciseTip() {
             const selected = exerciseCatalog[exerciseSelect.value];
             if (!selected) {
-                exerciseTip.textContent = "Choose a movement to load the camera framing tip.";
-                exerciseBadge.textContent = "Select a movement";
+                exerciseTip.textContent = "请选择动作，加载对应的入镜提示。";
+                exerciseBadge.textContent = "请选择动作";
+                recognizedAction.textContent = `${modeLabel()}`;
                 return;
             }
 
             exerciseTip.textContent = selected.tip;
             exerciseBadge.textContent = selected.label;
+            if (modeSelect.value === "manual") {
+                recognizedAction.textContent = `手动模式 - ${selected.label}`;
+                recognizedActionMetric.textContent = "手动";
+            } else {
+                recognizedAction.textContent = `自动识别 - 回退动作 ${selected.label}`;
+                recognizedActionMetric.textContent = "回退动作";
+            }
         }
 
         function setButtonState(mode) {
@@ -710,15 +778,41 @@
         function renderFeedback(payload) {
             repCount.textContent = String(payload.rep_count ?? 0);
             repCountOverlay.textContent = String(payload.rep_count ?? 0);
-            phaseText.textContent = payload.phase || "ready";
-            phaseOverlay.textContent = payload.phase || "ready";
-            statusText.textContent = payload.status_color || "idle";
-            setStateOverlay.textContent = activeSessionId ? "Set live" : "Set idle";
-            primaryCue.textContent = payload.primary_cue || "Nice rep | 动作稳定";
-            primaryCueOverlay.textContent = payload.primary_cue || "Nice rep | 动作稳定";
-            secondaryCue.textContent = payload.secondary_cue || "Keep moving with the current rhythm.";
-            secondaryCueOverlay.textContent = payload.secondary_cue || "Keep moving with the current rhythm.";
-            setBadgeState(payload.status_color || "warn", payload.status_color || "warn");
+            phaseText.textContent = phaseLabel(payload.phase);
+            phaseOverlay.textContent = phaseLabel(payload.phase);
+            statusText.textContent = statusLabel(payload.status_color);
+            setStateOverlay.textContent = activeSessionId ? "训练进行中" : "尚未开始训练";
+            primaryCue.textContent = payload.primary_cue || "这一下很稳，继续保持现在的节奏。";
+            primaryCueOverlay.textContent = payload.primary_cue || "这一下很稳，继续保持现在的节奏。";
+            secondaryCue.textContent = payload.secondary_cue || "继续保持现在的节奏，动作别着急。";
+            secondaryCueOverlay.textContent = payload.secondary_cue || "继续保持现在的节奏，动作别着急。";
+            setBadgeState(payload.status_color || "warn", statusLabel(payload.status_color || "warn"));
+            exerciseBadge.textContent = payload.active_exercise_label || exerciseBadge.textContent;
+
+            if ((payload.mode || "manual") === "auto") {
+                if (payload.recognition_state === "recognized" && payload.active_exercise_label) {
+                    const confidencePct = Math.round((payload.recognized_confidence || 0) * 100);
+                    if (payload.coaching_mode === "generic") {
+                        recognizedAction.textContent = `自动识别 - ${payload.active_exercise_label} - 通用指导 - ${confidencePct}%`;
+                        recognizedActionMetric.textContent = coachingModeLabel("generic");
+                    } else if (payload.coaching_mode === "specialized") {
+                        recognizedAction.textContent = `自动识别 - ${payload.active_exercise_label} - 专项纠错 - ${confidencePct}%`;
+                        recognizedActionMetric.textContent = coachingModeLabel("specialized");
+                    } else {
+                        recognizedAction.textContent = `自动识别 - ${payload.active_exercise_label} - 回退动作 - ${confidencePct}%`;
+                        recognizedActionMetric.textContent = coachingModeLabel("fallback");
+                    }
+                } else if (payload.recognition_state === "model_unavailable") {
+                    recognizedAction.textContent = "自动识别 - 模型未加载";
+                    recognizedActionMetric.textContent = coachingModeLabel("offline");
+                } else {
+                    recognizedAction.textContent = `自动识别 - 预热中 - 回退动作 ${payload.exercise_label || ""}`.trim();
+                    recognizedActionMetric.textContent = coachingModeLabel("warming");
+                }
+            } else {
+                recognizedAction.textContent = `手动模式 - ${payload.exercise_label || ""}`.trim();
+                recognizedActionMetric.textContent = coachingModeLabel("manual");
+            }
 
             if (payload.speak_text) {
                 pushCueLog(payload.speak_text);
@@ -729,22 +823,22 @@
         function renderSummary(summary) {
             summaryPanel.hidden = false;
             summaryReps.textContent = String(summary.rep_count ?? 0);
-            summaryDuration.textContent = `${summary.duration_seconds ?? 0}s`;
-            summaryNextFocus.textContent = summary.next_focus || "Next focus appears here.";
-            summaryEncouragement.textContent = summary.encouragement || "Summary ready.";
+            summaryDuration.textContent = `${summary.duration_seconds ?? 0}秒`;
+            summaryNextFocus.textContent = summary.next_focus || "下一组重点会显示在这里。";
+            summaryEncouragement.textContent = summary.encouragement || "训练总结已生成。";
             summaryMistakes.innerHTML = "";
 
             const mistakes = summary.top_mistakes || [];
             if (!mistakes.length) {
                 const item = document.createElement("li");
-                item.innerHTML = "<span>No repeated issues detected.</span><strong>clean set</strong>";
+                item.innerHTML = "<span>这组没有明显重复错误。</span><strong>动作稳定</strong>";
                 summaryMistakes.appendChild(item);
                 return;
             }
 
             mistakes.forEach((mistake) => {
                 const item = document.createElement("li");
-                const count = `${mistake.count} frames`;
+                const count = `${mistake.count}帧`;
                 item.innerHTML = `<span>${mistake.label}</span><strong>${count}</strong>`;
                 summaryMistakes.appendChild(item);
             });
@@ -754,11 +848,11 @@
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
                 cameraPreview.srcObject = mediaStream;
-                setCameraPill("Camera ready", "good");
-                cameraStatus.textContent = "Camera ready. Stand inside the frame, then start the set.";
+                setCameraPill("摄像头已就绪", "good");
+                cameraStatus.textContent = "摄像头已开启。站到画面中间，然后开始训练。";
             } catch (error) {
-                setCameraPill("Camera blocked", "alert");
-                cameraStatus.textContent = "Camera permission denied or unavailable.";
+                setCameraPill("摄像头不可用", "alert");
+                cameraStatus.textContent = "摄像头权限被拒绝，或者当前设备无法访问摄像头。";
             }
         }
 
@@ -770,17 +864,21 @@
             const response = await fetch("/api/session/start", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ exercise: exerciseSelect.value }),
+                body: JSON.stringify({
+                    exercise: exerciseSelect.value,
+                    mode: modeSelect.value,
+                }),
             });
             const payload = await response.json();
             if (!response.ok) {
-                throw new Error(payload.error || "Unable to start session.");
+                throw new Error(payload.error || "启动训练失败。");
             }
 
             activeSessionId = payload.session_id;
             exerciseBadge.textContent = payload.exercise_label;
-            cameraStatus.textContent = payload.tip || "Live session started.";
-            setStateOverlay.textContent = "Set live";
+            cameraStatus.textContent = payload.tip || "训练已开始。";
+            setStateOverlay.textContent = "训练进行中";
+            recognizedAction.textContent = `${modeLabel()}已开启`;
             return activeSessionId;
         }
 
@@ -812,17 +910,18 @@
                     body: JSON.stringify({
                         session_id: activeSessionId,
                         image_data: imageData,
+                        mode: modeSelect.value,
                     }),
                 });
                 const payload = await response.json();
                 if (!response.ok) {
-                    throw new Error(payload.error || "Frame analysis failed.");
+                    throw new Error(payload.error || "当前帧分析失败。");
                 }
 
                 renderFeedback(payload);
             } catch (error) {
                 cameraStatus.textContent = error.message;
-                setBadgeState("alert", "error");
+                setBadgeState("alert", "出错");
             } finally {
                 frameInFlight = false;
             }
@@ -840,8 +939,8 @@
             paused = false;
             await ensureSession();
             setButtonState("running");
-            setCameraPill("Camera live", "good");
-            cameraStatus.textContent = "Set running. Live cues update every few hundred milliseconds.";
+            setCameraPill("训练进行中", "good");
+            cameraStatus.textContent = "训练进行中。系统会每隔几百毫秒更新一次识别和纠错。";
             startFrameLoop();
         }
 
@@ -852,9 +951,9 @@
 
             paused = true;
             setButtonState("paused");
-            setCameraPill("Paused", "warn");
-            cameraStatus.textContent = "Set paused. Press Start Set to resume.";
-            setStateOverlay.textContent = "Set paused";
+            setCameraPill("已暂停", "warn");
+            cameraStatus.textContent = "训练已暂停。点击“开始训练”继续。";
+            setStateOverlay.textContent = "训练已暂停";
         }
 
         async function endSet() {
@@ -876,8 +975,10 @@
             activeSessionId = "";
             paused = false;
             setButtonState("idle");
-            setCameraPill("Camera ready", "good");
-            setStateOverlay.textContent = "Set complete";
+            setCameraPill("摄像头已就绪", "good");
+            setStateOverlay.textContent = "训练已结束";
+            recognizedAction.textContent = `${modeLabel()}待命中`;
+            recognizedActionMetric.textContent = coachingModeLabel(modeSelect.value);
 
             try {
                 const response = await fetch("/api/session/stop", {
@@ -887,11 +988,11 @@
                 });
                 const payload = await response.json();
                 if (!response.ok) {
-                    throw new Error(payload.error || "Unable to finish the session.");
+                    throw new Error(payload.error || "结束训练失败。");
                 }
 
                 renderSummary(payload.summary);
-                cameraStatus.textContent = "Set complete. Review the summary and start again when ready.";
+                cameraStatus.textContent = "训练已结束。可以先看总结，再开始下一组。";
             } catch (error) {
                 cameraStatus.textContent = error.message;
             }
@@ -912,7 +1013,13 @@
         exerciseSelect.addEventListener("change", () => {
             updateExerciseTip();
             if (activeSessionId) {
-                cameraStatus.textContent = "Movement changed. Finish the current set before switching.";
+                cameraStatus.textContent = "动作已切换。建议先结束当前这一组，再开始新的动作。";
+            }
+        });
+        modeSelect.addEventListener("change", () => {
+            updateExerciseTip();
+            if (activeSessionId) {
+                cameraStatus.textContent = "识别模式已切换，接下来的画面会按新的模式处理。";
             }
         });
         voiceToggle.addEventListener("change", () => {
@@ -924,7 +1031,7 @@
 
         updateExerciseTip();
         setButtonState("idle");
-        setBadgeState("warn", "waiting");
+        setBadgeState("warn", "等待中");
     </script>
 </body>
 </html>

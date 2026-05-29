@@ -12,7 +12,15 @@ from flask import Flask, request, render_template, jsonify, send_from_directory,
 from werkzeug.utils import secure_filename
 
 from src.datapro import PreProcess
-from src.live_coach import EXERCISES as LIVE_EXERCISES, LiveCoachEngine, LiveCoachSessionStore
+from src.fitness_infer import FITNESS_LABELS, load_fitness_action_recognizer
+from src.live_coach import (
+    EXERCISES as LIVE_EXERCISES,
+    GENERIC_EXERCISES,
+    SPECIALIZED_EXERCISES,
+    LiveCoachEngine,
+    LiveCoachSessionStore,
+    normalize_exercise,
+)
 from src.score import Score
 from src.model import ST_GCN
 from src.local_llm import chat_with_ollama_model
@@ -65,6 +73,7 @@ session_histories = {}
 model, device = None, None
 pose_transformer = None
 live_pose_estimator = None
+fitness_action_recognizer = None
 live_session_store = LiveCoachSessionStore()
 live_coach_engine = LiveCoachEngine()
 
@@ -191,7 +200,7 @@ def _ensure_browser_compatible_video(filename):
 
 
 def load_global_model():
-    global model, device
+    global model, device, fitness_action_recognizer
     if model is None:
         model_path = r"model/best_model_7_exchange_val_and_test.pth"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -204,6 +213,23 @@ def load_global_model():
         print("加载模型权重成功")
         model.to(device)
         model.eval()
+
+    if fitness_action_recognizer is None:
+        checkpoint_path = os.getenv(
+            "FITNESS_RECOGNIZER_PATH",
+            os.path.join("model", "mmfit_pose11cls_stride48_best.pth"),
+        )
+        fitness_action_recognizer = load_fitness_action_recognizer(
+            checkpoint_path,
+            device=device,
+            window_size=48,
+            min_confidence=0.35,
+            num_classes=len(FITNESS_LABELS),
+        )
+        if fitness_action_recognizer is None:
+            print(f"未找到 MM-Fit 健身识别权重: {checkpoint_path}")
+        else:
+            print(f"已加载 MM-Fit 健身识别权重: {checkpoint_path}")
 
 
 load_global_model()
@@ -313,6 +339,21 @@ def create_visualization(video_path, keypoints, filename):
     return ""
 
 
+def resolve_live_exercise(exercise):
+    try:
+        return normalize_exercise(exercise)
+    except ValueError:
+        return "other"
+
+
+def resolve_coaching_mode(exercise):
+    if exercise in SPECIALIZED_EXERCISES:
+        return "specialized"
+    if exercise in GENERIC_EXERCISES and exercise != "other":
+        return "generic"
+    return "fallback"
+
+
 def process_video_file(filepath, filename):
     start_time = time.time()
     good_vid, keypoints = get_pose_transformer()(filepath, display_pose=False)
@@ -415,6 +456,7 @@ def webcam_upload():
 def api_session_start():
     payload = request.get_json(silent=True) or {}
     exercise = str(payload.get('exercise', '')).strip()
+    mode = str(payload.get('mode', 'manual')).strip().lower() or 'manual'
 
     try:
         session = live_session_store.start(exercise)
@@ -424,11 +466,15 @@ def api_session_start():
             'supported_exercises': list(LIVE_EXERCISES),
         }), 400
 
+    if fitness_action_recognizer is not None:
+        fitness_action_recognizer.reset()
+
     return jsonify({
         'session_id': session.session_id,
         'exercise': session.exercise,
         'exercise_label': LIVE_EXERCISES[session.exercise]['label'],
         'tip': LIVE_EXERCISES[session.exercise]['tip'],
+        'mode': mode,
     })
 
 
@@ -437,6 +483,7 @@ def api_session_frame():
     payload = request.get_json(silent=True) or {}
     session_id = str(payload.get('session_id', '')).strip()
     image_data = payload.get('image_data')
+    mode = str(payload.get('mode', 'manual')).strip().lower() or 'manual'
 
     if not session_id:
         return jsonify({'error': '缺少 session_id'}), 400
@@ -453,11 +500,39 @@ def api_session_frame():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
-    result = live_coach_engine.evaluate(session.exercise, keypoints, session)
+    active_exercise = session.exercise
+    recognized_action = ""
+    recognized_confidence = 0.0
+    recognition_state = "manual"
+
+    if mode == "auto":
+        if fitness_action_recognizer is None:
+            recognition_state = "model_unavailable"
+        elif keypoints is None:
+            recognition_state = "no_person"
+        else:
+            recognized = fitness_action_recognizer.push_frame(keypoints)
+            if recognized is None:
+                recognition_state = "warming_up"
+            else:
+                recognized_action = resolve_live_exercise(recognized.get("action", "other"))
+                recognized_confidence = recognized["confidence"]
+                active_exercise = recognized_action
+                recognition_state = "recognized"
+
+    result = live_coach_engine.evaluate(active_exercise, keypoints, session)
+    coaching_mode = resolve_coaching_mode(active_exercise)
     return jsonify({
         **result,
         'exercise': session.exercise,
         'exercise_label': LIVE_EXERCISES[session.exercise]['label'],
+        'active_exercise': active_exercise,
+        'active_exercise_label': LIVE_EXERCISES[active_exercise]['label'],
+        'coaching_mode': coaching_mode,
+        'mode': mode,
+        'recognized_action': recognized_action,
+        'recognized_confidence': recognized_confidence,
+        'recognition_state': recognition_state,
     })
 
 
@@ -472,6 +547,9 @@ def api_session_stop():
         session = live_session_store.stop(session_id)
     except KeyError:
         return jsonify({'error': '会话不存在或已过期'}), 404
+
+    if fitness_action_recognizer is not None:
+        fitness_action_recognizer.reset()
 
     summary = live_coach_engine.build_summary(session)
     return jsonify({'summary': summary})

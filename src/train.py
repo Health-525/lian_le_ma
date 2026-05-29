@@ -1,11 +1,125 @@
 import numpy as np
 import torch
 from pathlib import Path
+import argparse
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.data_feeder import TrainFeeder, InferFeeder
 from src.model import ST_GCN
-from datapro import combined_transform
+from src.datapro import combined_transform
 from src.visualize import evaluate_and_plot_confusion_matrix
+from src.fitness_dataset_bootstrap import export_bootstrap_dataset
+
+
+def resolve_repo_path(path_value):
+    path = Path(path_value)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def build_train_config(
+    epochs=5,
+    batch_size=32,
+    data_path="tools/train_keypoints.npy",
+    label_path="tools/train_labels.npy",
+    output_path="model/bootstrap_checkpoint.pth",
+    device=None,
+    num_classes=15,
+):
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    return {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "data_path": str(resolve_repo_path(data_path)),
+        "label_path": str(resolve_repo_path(label_path)),
+        "output_path": str(resolve_repo_path(output_path)),
+        "device": device,
+        "num_classes": num_classes,
+    }
+
+
+def run_bounded_training(config):
+    from sklearn.model_selection import train_test_split
+
+    data_path = Path(config["data_path"])
+    label_path = Path(config["label_path"])
+    output_path = Path(config["output_path"])
+
+    if not data_path.exists():
+        raise FileNotFoundError(f"Training data not found: {data_path}")
+    if not label_path.exists():
+        raise FileNotFoundError(f"Training labels not found: {label_path}")
+
+    data = np.load(data_path)
+    labels = np.load(label_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model = ST_GCN(
+        num_classes=config["num_classes"],
+        in_channels=2,
+        t_kernel_size=9,
+        hop_size=1,
+    ).to(config["device"])
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=1e-4)
+    criterion = torch.nn.CrossEntropyLoss()
+
+    stratify_labels = labels if len(np.unique(labels)) > 1 else None
+    train_data, val_data, train_labels, val_labels = train_test_split(
+        data, labels, test_size=0.1, random_state=118, stratify=stratify_labels
+    )
+
+    train_dataset = TrainFeeder(train_data, train_labels, transform=None)
+    val_dataset = TrainFeeder(val_data, val_labels, transform=None)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=config["batch_size"], shuffle=True
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=config["batch_size"], shuffle=False
+    )
+
+    best_val_acc = -1.0
+    for epoch in range(1, config["epochs"] + 1):
+        model.train()
+        train_correct = 0
+        for batch_data, batch_labels in train_loader:
+            batch_data = batch_data.to(config["device"])
+            batch_labels = batch_labels.to(config["device"])
+            optimizer.zero_grad()
+            output = model(batch_data)
+            loss = criterion(output, batch_labels)
+            loss.backward()
+            optimizer.step()
+            _, predicted = torch.max(output.data, 1)
+            train_correct += (predicted == batch_labels).sum().item()
+
+        model.eval()
+        val_correct = 0
+        with torch.no_grad():
+            for batch_data, batch_labels in val_loader:
+                batch_data = batch_data.to(config["device"])
+                batch_labels = batch_labels.to(config["device"])
+                output = model(batch_data)
+                _, predicted = torch.max(output.data, 1)
+                val_correct += (predicted == batch_labels).sum().item()
+
+        train_acc = 100 * train_correct / len(train_loader.dataset)
+        val_acc = 100 * val_correct / len(val_loader.dataset)
+        print(
+            f"Epoch {epoch}/{config['epochs']} - Train Acc: {train_acc:.2f}% - Val Acc: {val_acc:.2f}%"
+        )
+        if val_acc >= best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), output_path)
+
+    print(f"Saved checkpoint to {output_path}")
+    return output_path
 
 
 def train():
@@ -442,4 +556,36 @@ def train_3():
 
 
 if __name__ == "__main__":
-    train_3()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--data-path", default="tools/train_keypoints.npy")
+    parser.add_argument("--label-path", default="tools/train_labels.npy")
+    parser.add_argument("--output-path", default="model/bootstrap_checkpoint.pth")
+    parser.add_argument("--device", default=None)
+    parser.add_argument("--num-classes", type=int, default=15)
+    parser.add_argument("--generate-bootstrap-fitness-data", action="store_true")
+    parser.add_argument("--bootstrap-output-dir", default="tools/fitness_bootstrap")
+    parser.add_argument("--bootstrap-samples-per-class", type=int, default=64)
+    parser.add_argument("--bootstrap-frames", type=int, default=48)
+    parser.add_argument("--bootstrap-seed", type=int, default=7)
+    args = parser.parse_args()
+    if args.generate_bootstrap_fitness_data:
+        export_bootstrap_dataset(
+            resolve_repo_path(args.bootstrap_output_dir),
+            samples_per_class=args.bootstrap_samples_per_class,
+            frames=args.bootstrap_frames,
+            seed=args.bootstrap_seed,
+        )
+        print(f"Exported bootstrap dataset to {resolve_repo_path(args.bootstrap_output_dir)}")
+
+    config = build_train_config(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        data_path=args.data_path,
+        label_path=args.label_path,
+        output_path=args.output_path,
+        device=args.device,
+        num_classes=args.num_classes,
+    )
+    run_bounded_training(config)
