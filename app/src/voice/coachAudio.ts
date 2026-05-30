@@ -220,42 +220,54 @@ export function playIntro(exercise: SupportedExercise): Promise<void> {
 /**
  * 深蹲专用反馈。每帧调用一次。
  *
- * 逻辑：
+ * 优先级：纠错 > 计数 > 鼓励
  *  1. intro 播放中 → 全部屏蔽
- *  2. rep 增加且需要播报 → 播计数（本帧不再播 speak_text，避免叠音）
- *  3. 模型有 speak_text → 直接播（纠错或鼓励由模型决定）
+ *  2. 有纠错 speak_text（isStandard=false）→ 只播纠错，本帧跳过计数
+ *  3. rep 增加且需要播报 → 播计数
+ *  4. 有鼓励 speak_text（isStandard=true）→ 播鼓励
  */
 export function playSquatFeedback(
   rep: number,
+  isStandard: boolean,
   speakText?: string
 ): void {
-  // ── 1. intro 屏蔽 ──
   if (introPlaying) return;
 
-  // ── 2. 计数播报（rep 增加时） ──
-  const isNewRep = rep > lastAnnouncedRep;
-  if (isNewRep && shouldAnnounceRep(rep)) {
-    lastAnnouncedRep = rep;
-    const key = repFileKey(rep);
-    if (key) { enqueue(key, PRIO_COUNT); return; }  // 计数帧不再播 speak_text
+  // ── 1. 纠错优先（最高优先级）──
+  if (!isStandard && speakText) {
+    const fileKey = TEXT_TO_FILE[speakText.trim()];
+    if (fileKey) { enqueue(fileKey, PRIO_CORRECT); return; }
   }
 
-  // ── 3. 模型 speak_text（纠错 or 鼓励，由模型决定） ──
-  if (speakText) {
+  // ── 2. 计数（rep 增加时）──
+  if (rep > lastAnnouncedRep && shouldAnnounceRep(rep)) {
+    lastAnnouncedRep = rep;
+    const key = repFileKey(rep);
+    if (key) { enqueue(key, PRIO_COUNT); return; }
+  }
+
+  // ── 3. 鼓励（模型返回的 speak_text，动作标准时）──
+  if (isStandard && speakText) {
     const fileKey = TEXT_TO_FILE[speakText.trim()];
-    if (fileKey) enqueue(fileKey, PRIO_CORRECT);
+    if (fileKey) enqueue(fileKey, PRIO_COUNT); // 鼓励和计数同优先级，不会被纠错替换
   }
 }
 
 /**
- * 其他动作通用反馈。
- * 计数 + 直接播模型 speak_text（纠错或鼓励由模型决定）。
+ * 其他动作通用反馈。优先级：纠错 > 计数 > 鼓励。
  */
 export function playGenericFeedback(
   rep: number,
+  isStandard: boolean,
   speakText?: string
 ): void {
   if (introPlaying) return;
+
+  // 纠错优先
+  if (!isStandard && speakText) {
+    const fileKey = TEXT_TO_FILE[speakText.trim()];
+    if (fileKey) { enqueue(fileKey, PRIO_CORRECT); return; }
+  }
 
   // 计数
   if (rep > lastAnnouncedRep && shouldAnnounceRep(rep)) {
@@ -264,10 +276,10 @@ export function playGenericFeedback(
     if (key) { enqueue(key, PRIO_COUNT); return; }
   }
 
-  // 模型 speak_text
-  if (speakText) {
+  // 鼓励
+  if (isStandard && speakText) {
     const fileKey = TEXT_TO_FILE[speakText.trim()];
-    if (fileKey) enqueue(fileKey, PRIO_CORRECT);
+    if (fileKey) enqueue(fileKey, PRIO_COUNT);
   }
 }
 
