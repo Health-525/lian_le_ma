@@ -13,7 +13,8 @@ import { Audio } from "expo-av";
 import type { SupportedExercise } from "../types";
 
 // ── 常量 ──────────────────────────────────────────────────────────────────
-const COOLDOWN_MS    = 1200;  // 两条语音之间的最小间隔
+/** 两条普通语音之间的最小间隔（ms）。纠错不受此限制，直接打断。 */
+const COOLDOWN_MS    = 800;
 const PRIO_COUNT     = 2;
 const PRIO_CORRECT   = 3;
 
@@ -141,6 +142,12 @@ function enqueue(fileKey: string, priority: number): void {
   if (!AUDIO_FILES[fileKey]) return;
   const now = Date.now();
 
+  // 纠错直接打断当前播放（不等冷却）
+  if (priority === PRIO_CORRECT) {
+    void _playImmediate(fileKey);
+    return;
+  }
+
   if (isPlaying || now - lastPlayedAt < COOLDOWN_MS) {
     // 正在播或冷却中：高优先级替换等待队列，不打断当前
     if (priority > pendingPrio) {
@@ -150,6 +157,21 @@ function enqueue(fileKey: string, priority: number): void {
     return;
   }
   void _play(fileKey);
+}
+
+/** 立即播放（纠错专用）：停掉当前语音，直接播新的。 */
+async function _playImmediate(fileKey: string): Promise<void> {
+  if (!AUDIO_FILES[fileKey]) return;
+  // 停掉当前正在播的（计数/鼓励）
+  if (currentSound) {
+    await currentSound.stopAsync().catch(() => {});
+    await currentSound.unloadAsync().catch(() => {});
+    currentSound = null;
+  }
+  pendingKey  = null;
+  pendingPrio = 0;
+  isPlaying   = false;
+  await _play(fileKey);
 }
 
 async function _play(fileKey: string): Promise<void> {
