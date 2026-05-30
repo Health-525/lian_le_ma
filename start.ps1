@@ -57,6 +57,13 @@ Write-Host "[2/3] Wrote $envFile" -ForegroundColor Green
 # ---- 3. Start model server + Expo ----
 Write-Host "[3/3] Launching model server and Expo (separate windows)..." -ForegroundColor Green
 
+# 清除 Metro 缓存，确保手机拿到最新代码
+$metroCache = Join-Path $appDir "node_modules" ".cache"
+if (Test-Path $metroCache) {
+    Remove-Item -Recurse -Force $metroCache -ErrorAction SilentlyContinue
+    Write-Host "      Metro cache cleared." -ForegroundColor DarkGray
+}
+
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
     "cd '$root'; Write-Host '== Model server web_app.py (port $modelPort) =='; python web_app.py"
@@ -66,7 +73,7 @@ Start-Sleep -Seconds 3
 
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
-    "cd '$appDir'; Write-Host '== Expo dev server =='; npx expo start"
+    "cd '$appDir'; Write-Host '== Expo dev server (cache cleared) =='; npx expo start --clear"
 )
 
 Write-Host ""
