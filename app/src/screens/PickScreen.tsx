@@ -4,8 +4,7 @@
  * 选中动作后点 GO 进入实时姿势矫正。
  */
 import { useRef, useState } from "react";
-import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { springBouncy, springGentle } from "../ui/animation";
@@ -30,10 +29,13 @@ export default function PickScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* 顶部品牌：居中大 logo */}
+        {/* 顶部品牌 */}
         <View style={styles.header}>
           <Image source={LOGO} style={styles.logo} resizeMode="contain" />
           <Text style={styles.subtitle}>AI 实时姿势矫正</Text>
+          <Pressable style={styles.customBtn} onPress={() => navigation.navigate("Customization")}>
+            <Text style={styles.customBtnText}>✨ 个性化推荐</Text>
+          </Pressable>
         </View>
 
         {/* 动作选择 */}
@@ -105,6 +107,17 @@ const styles = StyleSheet.create({
   header: { alignItems: "center", marginTop: spacing(4), marginBottom: spacing(2) },
   logo: { width: 200, height: 200 },
   subtitle: { fontSize: font.body, color: colors.textMuted, marginTop: spacing(1) },
+  customBtn: {
+    alignSelf: "center",
+    marginTop: spacing(2),
+    paddingVertical: spacing(2.5),
+    paddingHorizontal: spacing(5),
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  customBtnText: { fontSize: font.small, fontWeight: "700", color: colors.accentDeep },
   statusDot: { flexDirection: "row", alignItems: "center", gap: spacing(1.5), paddingVertical: spacing(1.5), paddingHorizontal: spacing(3), borderRadius: radius.pill, marginTop: spacing(2) },
   dot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { fontSize: font.tiny, fontWeight: "700" },

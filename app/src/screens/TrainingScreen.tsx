@@ -50,6 +50,10 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const runningRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
+  // 训练统计
+  const startTimeRef = useRef<number>(0);
+  const standardRepsRef = useRef(0);
+  const correctionCountRef = useRef(0);
 
   // 状态环呼吸脉冲
   const pulse = useRef(new Animated.Value(1)).current;
@@ -74,6 +78,11 @@ export default function TrainingScreen({ navigation, route }: Props) {
       const result = await getFormProvider().analyze({ exercise, imageBase64: photo?.base64 });
       setLast(result);
       if (typeof result.repCount === "number") setReps(result.repCount);
+      // 统计标准次数和纠错次数
+      if (result.status === "conclusive") {
+        if (result.isStandard) standardRepsRef.current += 1;
+        else correctionCountRef.current += 1;
+      }
       // 播放教练语音（本地预生成 mp3，防卡顿队列）
       if (exercise === "squat") {
         playSquatFeedback(result.repCount ?? 0, result.isStandard, result.speakText);
@@ -99,6 +108,12 @@ export default function TrainingScreen({ navigation, route }: Props) {
     runningRef.current = true;
     setRunning(true);
     setStatusMsg("训练中 · 实时分析");
+    // 记录开始时间，重置统计
+    if (startTimeRef.current === 0) {
+      startTimeRef.current = Date.now();
+      standardRepsRef.current = 0;
+      correctionCountRef.current = 0;
+    }
     // 播放开场引导语音（深蹲有专属引导，其他动作静默）
     void playIntro(exercise);
     sendFrame();
@@ -122,6 +137,24 @@ export default function TrainingScreen({ navigation, route }: Props) {
   useEffect(() => () => { stopLoop(); void stopCoachAudio(); void stopFormSession(); }, [stopLoop]);
 
   const onBack = () => { heavyHaptic(); stopLoop(); void stopCoachAudio(); void stopFormSession(); navigation.goBack(); };
+  const onEnd = () => {
+    heavyHaptic();
+    stopLoop();
+    void stopCoachAudio();
+    void stopFormSession();
+    const durationSec = startTimeRef.current > 0
+      ? Math.round((Date.now() - startTimeRef.current) / 1000)
+      : 0;
+    navigation.replace("WorkoutReport", {
+      report: {
+        exercise,
+        totalReps: reps,
+        standardReps: standardRepsRef.current,
+        correctionCount: correctionCountRef.current,
+        durationSec,
+      },
+    });
+  };
   const togglePause = () => {
     lightHaptic();
     if (runningRef.current) { stopLoop(); setStatusMsg("已暂停 · 点击继续"); }
@@ -202,7 +235,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
             >
               <Text style={styles.ctrlText}>{running ? "暂停" : "继续"}</Text>
             </Pressable>
-            <Pressable onPress={onBack} style={[styles.ctrlBtn, styles.ctrlEnd]}>
+            <Pressable onPress={onEnd} style={[styles.ctrlBtn, styles.ctrlEnd]}>
               <Text style={styles.ctrlText}>结束</Text>
             </Pressable>
           </View>

@@ -1,12 +1,23 @@
 import type { SupportedExercise } from "./types";
 
-/** 运动 tab 内部栈：Pick（选动作）→ Training（实时姿势矫正）。 */
+/** 训练总结数据（从训练页传给总结页）。 */
+export interface WorkoutReport {
+  exercise: SupportedExercise;
+  totalReps: number;
+  standardReps: number;
+  correctionCount: number;
+  durationSec: number;
+}
+
+/** 运动 tab 内部栈：Pick → Customization → Training → WorkoutReport。 */
 export type WorkoutStackParamList = {
   Pick: undefined;
+  Customization: undefined;
   Training: { exercise: SupportedExercise };
+  WorkoutReport: { report: WorkoutReport };
 };
 
-/** 我的 tab 内部栈：Profile（个人中心）→ EditProfile → Settings → Voice。 */
+/** 我的 tab 内部栈：Profile → EditProfile → Settings → Voice。 */
 export type ProfileStackParamList = {
   Profile: undefined;
   EditProfile: undefined;

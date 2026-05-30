@@ -12,6 +12,8 @@ import { StatusBar } from "expo-status-bar";
 
 import PickScreen from "./src/screens/PickScreen";
 import TrainingScreen from "./src/screens/TrainingScreen";
+import WorkoutReportScreen from "./src/screens/WorkoutReportScreen";
+import CustomizationScreen from "./src/screens/CustomizationScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import EditProfileScreen from "./src/screens/EditProfileScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
@@ -33,7 +35,9 @@ function WorkoutNavigator() {
   return (
     <WorkoutStack.Navigator screenOptions={{ headerShown: false }}>
       <WorkoutStack.Screen name="Pick" component={PickScreen} />
+      <WorkoutStack.Screen name="Customization" component={CustomizationScreen} />
       <WorkoutStack.Screen name="Training" component={TrainingScreen} />
+      <WorkoutStack.Screen name="WorkoutReport" component={WorkoutReportScreen} />
     </WorkoutStack.Navigator>
   );
 }
@@ -61,7 +65,9 @@ function ProfileNavigator() {
 /** 训练页为全屏摄像头，隐藏底部 tab 栏避免遮挡。 */
 function workoutTabBarStyle(route: RouteProp<RootTabParamList, "Workout">) {
   const name = getFocusedRouteNameFromRoute(route) ?? "Pick";
-  if (name === "Training") return { display: "none" as const };
+  if (name === "Training" || name === "WorkoutReport" || name === "Customization") {
+    return { display: "none" as const };
+  }
   return undefined;
 }
 
