@@ -1,20 +1,19 @@
 /**
- * 本地教练语音播放器 —— 防卡顿版。
+ * 本地教练语音播放器 —— 清晰逻辑版。
  *
- * 核心设计：
- *  1. 播放锁：正在播音频时，新请求不打断，直接丢弃或替换队列。
- *  2. 冷却时间：每条播完后至少等 COOLDOWN_MS 才能播下一条。
- *  3. 优先级：纠错(3) > 计数(2) > 鼓励(1)。高优先级替换队列里等待的低优先级，
- *     但不打断正在播的（避免卡顿）。
- *  4. 计数去重：同一 rep 数只播一次。
+ * 设计原则：
+ *  1. 播放锁：正在播时不打断，新请求进队列或丢弃。
+ *  2. 冷却：播完后等 COOLDOWN_MS 再播下一条，避免连续轰炸。
+ *  3. 优先级：纠错(3) > 计数(2) > 鼓励(1)。
+ *     高优先级替换队列里等待的低优先级，但不打断正在播的。
+ *  4. 同帧互斥：计数帧不触发鼓励，避免同一帧双触发。
+ *  5. intro 屏蔽：intro 播完之前，只允许纠错，屏蔽计数和鼓励。
  */
 import { Audio } from "expo-av";
 import type { SupportedExercise } from "../types";
 
-// ── 冷却时间（ms）：播完后至少等多久才能播下一条 ──────────────────────
-const COOLDOWN_MS = 1200;
-
-// ── 优先级 ────────────────────────────────────────────────────────────────
+// ── 常量 ──────────────────────────────────────────────────────────────────
+const COOLDOWN_MS    = 1200;  // 两条语音之间的最小间隔
 const PRIO_ENCOURAGE = 1;
 const PRIO_COUNT     = 2;
 const PRIO_CORRECT   = 3;
@@ -79,9 +78,7 @@ const AUDIO_FILES: Record<string, number> = {
   encourage_3: require("../../assets/audio/encourage_3.mp3"),
   encourage_5: require("../../assets/audio/encourage_5.mp3"),
   encourage_10: require("../../assets/audio/encourage_10.mp3"),
-  // 开场引导
   intro_squat: require("../../assets/audio/intro_squat.mp3"),
-  // 计数
   rep_1: require("../../assets/audio/rep_1.mp3"),
   rep_2: require("../../assets/audio/rep_2.mp3"),
   rep_3: require("../../assets/audio/rep_3.mp3"),
@@ -100,7 +97,6 @@ const AUDIO_FILES: Record<string, number> = {
   rep_40: require("../../assets/audio/rep_40.mp3"),
   rep_45: require("../../assets/audio/rep_45.mp3"),
   rep_50: require("../../assets/audio/rep_50.mp3"),
-  // 深蹲标准鼓励（8 条轮播）
   squat_good_1: require("../../assets/audio/squat_good_1.mp3"),
   squat_good_2: require("../../assets/audio/squat_good_2.mp3"),
   squat_good_3: require("../../assets/audio/squat_good_3.mp3"),
@@ -109,14 +105,11 @@ const AUDIO_FILES: Record<string, number> = {
   squat_good_6: require("../../assets/audio/squat_good_6.mp3"),
   squat_good_7: require("../../assets/audio/squat_good_7.mp3"),
   squat_good_8: require("../../assets/audio/squat_good_8.mp3"),
-  // 连续标准里程碑
   squat_streak_3: require("../../assets/audio/squat_streak_3.mp3"),
   squat_streak_5: require("../../assets/audio/squat_streak_5.mp3"),
   squat_streak_8: require("../../assets/audio/squat_streak_8.mp3"),
   squat_streak_10: require("../../assets/audio/squat_streak_10.mp3"),
-  // 暂停恢复
   resume_squat: require("../../assets/audio/resume_squat.mp3"),
-  // 通用鼓励（其他动作）
   good_form_1: require("../../assets/audio/good_form_1.mp3"),
   good_form_2: require("../../assets/audio/good_form_2.mp3"),
   good_form_3: require("../../assets/audio/good_form_3.mp3"),
@@ -124,19 +117,22 @@ const AUDIO_FILES: Record<string, number> = {
   good_form_5: require("../../assets/audio/good_form_5.mp3"),
 };
 
-// ── 播放状态 ──────────────────────────────────────────────────────────────
-let isPlaying = false;
+// ── 播放引擎状态 ──────────────────────────────────────────────────────────
+let isPlaying    = false;
 let lastPlayedAt = 0;
 let pendingKey: string | null = null;
-let pendingPrio = 0;
+let pendingPrio  = 0;
 let currentSound: Audio.Sound | null = null;
-/** intro 播放期间屏蔽计数，教程讲完才开始计数。 */
-let introPlaying = false;
 
 // ── 训练状态 ──────────────────────────────────────────────────────────────
-let lastAnnouncedRep = 0;
-let consecutiveGoodReps = 0;
-let squat_good_idx = 0;
+let introPlaying       = false;  // intro 播放期间屏蔽计数/鼓励
+let lastAnnouncedRep   = 0;      // 上次播报的 rep 数（去重）
+let consecutiveGood    = 0;      // 连续标准次数
+let squat_good_idx     = 0;      // 深蹲鼓励轮播索引
+let good_form_idx      = 0;      // 通用鼓励轮播索引
+/** 上次播鼓励时的 rep 数，避免同一 rep 既播计数又播鼓励。 */
+let lastEncourageRep   = -1;
+
 const SQUAT_GOOD_FILES = [
   "squat_good_1","squat_good_2","squat_good_3","squat_good_4",
   "squat_good_5","squat_good_6","squat_good_7","squat_good_8",
@@ -144,54 +140,38 @@ const SQUAT_GOOD_FILES = [
 const GOOD_FORM_FILES = [
   "good_form_1","good_form_2","good_form_3","good_form_4","good_form_5",
 ];
-let good_form_idx = 0;
 
-/** 重置训练状态（开始新训练时调用）。 */
+// ── 重置 ──────────────────────────────────────────────────────────────────
 export function resetCoachState(): void {
+  introPlaying     = false;
   lastAnnouncedRep = 0;
-  consecutiveGoodReps = 0;
-  squat_good_idx = 0;
-  good_form_idx = 0;
-  pendingKey = null;
-  pendingPrio = 0;
-  introPlaying = false;
+  consecutiveGood  = 0;
+  squat_good_idx   = 0;
+  good_form_idx    = 0;
+  lastEncourageRep = -1;
+  pendingKey       = null;
+  pendingPrio      = 0;
 }
 
 // ── 核心播放引擎 ──────────────────────────────────────────────────────────
 
-/** 把一条语音加入队列（不打断正在播的）。 */
 function enqueue(fileKey: string, priority: number): void {
-  const source = AUDIO_FILES[fileKey];
-  if (!source) return;
-
+  if (!AUDIO_FILES[fileKey]) return;
   const now = Date.now();
 
-  // 正在播放：只有更高优先级才能替换等待队列（不打断当前播放）
-  if (isPlaying) {
+  if (isPlaying || now - lastPlayedAt < COOLDOWN_MS) {
+    // 正在播或冷却中：高优先级替换等待队列，不打断当前
     if (priority > pendingPrio) {
-      pendingKey = fileKey;
+      pendingKey  = fileKey;
       pendingPrio = priority;
     }
     return;
   }
-
-  // 冷却中：同样只替换等待队列
-  if (now - lastPlayedAt < COOLDOWN_MS) {
-    if (priority > pendingPrio) {
-      pendingKey = fileKey;
-      pendingPrio = priority;
-    }
-    return;
-  }
-
-  // 空闲：直接播
   void _play(fileKey);
 }
 
 async function _play(fileKey: string): Promise<void> {
-  const source = AUDIO_FILES[fileKey];
-  if (!source) return;
-
+  if (!AUDIO_FILES[fileKey]) return;
   isPlaying = true;
   try {
     if (currentSound) {
@@ -199,147 +179,163 @@ async function _play(fileKey: string): Promise<void> {
       currentSound = null;
     }
     await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
-    const { sound } = await Audio.Sound.createAsync(source, { shouldPlay: true });
+    const { sound } = await Audio.Sound.createAsync(AUDIO_FILES[fileKey]!, { shouldPlay: true });
     currentSound = sound;
-
     sound.setOnPlaybackStatusUpdate((status) => {
       if (status.isLoaded && status.didJustFinish) {
         sound.unloadAsync().catch(() => {});
         if (currentSound === sound) currentSound = null;
-        isPlaying = false;
+        isPlaying    = false;
         lastPlayedAt = Date.now();
-        // 播完后检查是否有等待的语音
+        // 播完后若有等待的语音，延迟 300ms 再播
         if (pendingKey) {
-          const key = pendingKey;
-          pendingKey = null;
+          const key   = pendingKey;
+          pendingKey  = null;
           pendingPrio = 0;
-          // 再等一小段冷却再播（避免连续两条太紧）
           setTimeout(() => void _play(key), 300);
         }
       }
     });
   } catch {
-    isPlaying = false;
+    isPlaying    = false;
     lastPlayedAt = Date.now();
   }
 }
 
-// ── 计数播报规则 ──────────────────────────────────────────────────────────
+// ── 计数规则 ──────────────────────────────────────────────────────────────
+/** 哪些 rep 数需要播报。 */
 function shouldAnnounceRep(rep: number): boolean {
-  if (rep <= 10) return true;
-  if (rep % 5 === 0) return true;
-  return false;
+  return rep <= 10 || rep % 5 === 0;
 }
 
 function repFileKey(rep: number): string | null {
   const key = `rep_${rep}`;
-  return AUDIO_FILES[key] !== undefined ? key : null;
+  return AUDIO_FILES[key] ? key : null;
 }
 
 // ── 公开 API ──────────────────────────────────────────────────────────────
 
-/** 播放开场引导语音（进入训练页时调用）。 */
+/** 播放开场引导（进入训练页时调用）。 */
 export async function playIntro(exercise: SupportedExercise): Promise<void> {
   resetCoachState();
   const key = `intro_${exercise}`;
-  if (AUDIO_FILES[key] !== undefined) {
-    introPlaying = true;   // 屏蔽计数，直到 intro 播完
-    await _play(key);
-    // _play 是异步的，但 intro 播完由 onPlaybackStatusUpdate 回调处理
-    // 我们在回调里清除 introPlaying 标志
-    // 这里注册一个一次性监听：intro 播完后解除屏蔽
-    const checkDone = setInterval(() => {
-      if (!isPlaying) {
-        introPlaying = false;
-        clearInterval(checkDone);
-      }
-    }, 200);
-  }
-}
+  if (!AUDIO_FILES[key]) return;
 
-/** 根据模型返回的 speak_text 播放对应的本地教练语音（纠错，最高优先级）。 */
-export function playCoachAudio(speakText: string): void {
-  const fileKey = TEXT_TO_FILE[speakText.trim()];
-  if (!fileKey) return;
-  enqueue(fileKey, PRIO_CORRECT);
+  introPlaying = true;
+  await _play(key);
+  // 轮询检测 intro 是否播完（精度 200ms）
+  const timer = setInterval(() => {
+    if (!isPlaying) {
+      introPlaying = false;
+      clearInterval(timer);
+    }
+  }, 200);
 }
 
 /**
- * 深蹲专用：根据 rep 数和动作是否标准决定播放哪条语音。
- * 优先级：计数(2) > 连续标准鼓励(1) > 纠错(3，由 playCoachAudio 单独调用)。
+ * 深蹲专用反馈。每帧调用一次。
+ *
+ * 决策树（严格按优先级，同帧只触发一个）：
+ *  1. intro 播放中 → 只播纠错，其余全屏蔽
+ *  2. rep 增加且需要播报 → 播计数（同时更新连续计数，但本帧不触发鼓励）
+ *  3. 动作不标准 → 播纠错，重置连续计数
+ *  4. 动作标准 → 更新连续计数，检查里程碑（3/5/8/10），或每5个播鼓励
+ *     （里程碑和每5个互斥：里程碑优先）
  */
 export function playSquatFeedback(
   rep: number,
   isStandard: boolean,
   speakText?: string
 ): void {
-  // intro 还在播放时，屏蔽计数和鼓励，只允许纠错话术
+  // ── 1. intro 屏蔽 ──
   if (introPlaying) {
-    if (!isStandard && speakText) playCoachAudio(speakText);
+    if (!isStandard && speakText) enqueue(TEXT_TO_FILE[speakText.trim()] ?? "", PRIO_CORRECT);
     return;
   }
 
-  // 1. 计数播报（优先级 PRIO_COUNT）
-  if (rep > lastAnnouncedRep && shouldAnnounceRep(rep)) {
+  // ── 2. 计数播报 ──
+  const isNewRep = rep > lastAnnouncedRep;
+  if (isNewRep && shouldAnnounceRep(rep)) {
     lastAnnouncedRep = rep;
+    // 同时更新连续计数（计数帧也算一次标准/不标准）
+    if (isStandard) consecutiveGood += 1;
+    else consecutiveGood = 0;
     const key = repFileKey(rep);
-    if (key) { enqueue(key, PRIO_COUNT); return; }
+    if (key) { enqueue(key, PRIO_COUNT); return; }  // 本帧只播计数，不再触发鼓励
   }
 
-  if (isStandard) {
-    consecutiveGoodReps += 1;
-    // 2. 连续标准里程碑
-    if (consecutiveGoodReps === 10) {
-      enqueue("squat_streak_10", PRIO_ENCOURAGE); return;
+  // ── 3. 动作不标准 → 纠错 ──
+  if (!isStandard) {
+    consecutiveGood = 0;
+    if (speakText) {
+      const fileKey = TEXT_TO_FILE[speakText.trim()];
+      if (fileKey) enqueue(fileKey, PRIO_CORRECT);
     }
-    if (consecutiveGoodReps === 8) {
-      enqueue("squat_streak_8", PRIO_ENCOURAGE); return;
-    }
-    if (consecutiveGoodReps === 5) {
-      enqueue("squat_streak_5", PRIO_ENCOURAGE); return;
-    }
-    if (consecutiveGoodReps === 3) {
-      enqueue("squat_streak_3", PRIO_ENCOURAGE); return;
-    }
-    // 3. 每 5 个标准动作随机播一条鼓励（避免太频繁）
-    if (consecutiveGoodReps % 5 === 0) {
-      const key = SQUAT_GOOD_FILES[squat_good_idx % SQUAT_GOOD_FILES.length]!;
-      squat_good_idx += 1;
-      enqueue(key, PRIO_ENCOURAGE);
-    }
-  } else {
-    consecutiveGoodReps = 0;
-    // 4. 动作不标准 → 纠错话术（最高优先级，由模型 speak_text 驱动）
-    if (speakText) playCoachAudio(speakText);
+    return;
+  }
+
+  // ── 4. 动作标准 → 更新连续计数，检查鼓励 ──
+  consecutiveGood += 1;
+
+  // 同一 rep 不重复触发鼓励（避免同帧多次调用）
+  if (rep === lastEncourageRep) return;
+
+  // 里程碑（精确匹配，优先于每5个）
+  if (consecutiveGood === 10) {
+    lastEncourageRep = rep;
+    enqueue("squat_streak_10", PRIO_ENCOURAGE); return;
+  }
+  if (consecutiveGood === 8) {
+    lastEncourageRep = rep;
+    enqueue("squat_streak_8", PRIO_ENCOURAGE); return;
+  }
+  if (consecutiveGood === 5) {
+    lastEncourageRep = rep;
+    enqueue("squat_streak_5", PRIO_ENCOURAGE); return;
+  }
+  if (consecutiveGood === 3) {
+    lastEncourageRep = rep;
+    enqueue("squat_streak_3", PRIO_ENCOURAGE); return;
+  }
+
+  // 每 5 个标准动作播一条鼓励（里程碑之外的）
+  if (consecutiveGood > 10 && consecutiveGood % 5 === 0) {
+    lastEncourageRep = rep;
+    const key = SQUAT_GOOD_FILES[squat_good_idx % SQUAT_GOOD_FILES.length]!;
+    squat_good_idx += 1;
+    enqueue(key, PRIO_ENCOURAGE);
   }
 }
 
 /**
- * 其他动作的通用反馈：标准时偶尔鼓励，不标准时播纠错。
+ * 其他动作通用反馈。
+ * 标准时每 6 个播一条鼓励；不标准时播纠错。
  */
 export function playGenericFeedback(
   isStandard: boolean,
   speakText?: string
 ): void {
   if (isStandard) {
-    consecutiveGoodReps += 1;
-    // 每 6 个标准动作播一条通用鼓励
-    if (consecutiveGoodReps % 6 === 0) {
+    consecutiveGood += 1;
+    if (consecutiveGood % 6 === 0) {
       const key = GOOD_FORM_FILES[good_form_idx % GOOD_FORM_FILES.length]!;
       good_form_idx += 1;
       enqueue(key, PRIO_ENCOURAGE);
     }
   } else {
-    consecutiveGoodReps = 0;
-    if (speakText) playCoachAudio(speakText);
+    consecutiveGood = 0;
+    if (speakText) {
+      const fileKey = TEXT_TO_FILE[speakText.trim()];
+      if (fileKey) enqueue(fileKey, PRIO_CORRECT);
+    }
   }
 }
 
-/** 停止当前正在播放的语音并清空队列。 */
+/** 停止当前语音并清空队列。 */
 export async function stopCoachAudio(): Promise<void> {
-  pendingKey = null;
-  pendingPrio = 0;
-  isPlaying = false;
+  pendingKey   = null;
+  pendingPrio  = 0;
+  isPlaying    = false;
   introPlaying = false;
   if (currentSound) {
     await currentSound.stopAsync().catch(() => {});
