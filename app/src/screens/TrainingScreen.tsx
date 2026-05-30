@@ -1,22 +1,19 @@
 /**
- * 实时姿势矫正页（第二步）—— iOS 全屏摄像头 + 毛玻璃叠加层。
+ * 实时姿势矫正页（高级沉浸式）。
  *
- * 叠加层：
- *  - 顶部：返回 / 状态徽章 / 翻转（BlurView）
- *  - 中部：大号次数 96px + 动作阶段
- *  - 底部：毛玻璃提示卡 + 暂停/结束控制
+ * 设计：全屏摄像头 + 上下渐变遮罩 + 玻璃质感叠加层。
+ *  - 顶部：返回 / 动作名胶囊 / 翻转，半透明玻璃按钮
+ *  - 中部：超大次数 + 动态状态环（颜色随 good/warn/alert 平滑过渡，呼吸脉冲）
+ *  - 底部：玻璃提示卡（主/副提示，左侧状态色条）+ 暂停/结束
+ * 进入即请求权限自动开始，每 FRAME_INTERVAL_MS 抓帧送分析层。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { CameraView, useCameraPermissions, type CameraType } from "expo-camera";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
 
 import {
   getFormProvider,
@@ -24,24 +21,18 @@ import {
   stopFormSession,
   type FormAnalysisResult,
 } from "../analysis";
-import { PrimaryButton, GlassCard } from "../ui/components";
-import { colors, elevation, font, radius, spacing, toneOf, type StatusTone } from "../ui/theme";
-import { springBouncy } from "../ui/animation";
 import { heavyHaptic, lightHaptic } from "../ui/haptics";
+import { colors, font, radius, spacing, toneOf, type StatusTone } from "../ui/theme";
 import { EXERCISE_LABEL } from "../types";
-import type { FitnessStackParamList } from "../navigation";
+import type { WorkoutStackParamList } from "../navigation";
 
-type Props = NativeStackScreenProps<FitnessStackParamList, "Training">;
+type Props = NativeStackScreenProps<WorkoutStackParamList, "Training">;
 
 const FRAME_INTERVAL_MS = 600;
+const RING = 260;
 
 const PHASE_LABEL: Record<string, string> = {
-  up: "上升",
-  down: "下降",
-  ready: "准备",
-  hold: "保持",
-  lowering: "下放",
-  rising: "上举",
+  up: "上升", down: "下降", ready: "准备", hold: "保持", lowering: "下放", rising: "上举",
 };
 
 export default function TrainingScreen({ navigation, route }: Props) {
@@ -59,39 +50,29 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const runningRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 次数弹跳动画
-  const repScale = useSharedValue(1);
-  const prevReps = useRef(0);
-
-  useEffect(() => {
-    if (reps !== prevReps.current && prevReps.current !== 0) {
-      repScale.value = 1.3;
-      repScale.value = withSpring(1, springBouncy);
-    }
-    prevReps.current = reps;
-  }, [reps, repScale]);
-
-  const repAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: repScale.value }],
-  }));
-
   const connected = isModelConnected();
+
+  // 状态环呼吸脉冲
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.06, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const ringStyle = { transform: [{ scale: pulse }] };
 
   const sendFrame = useCallback(async () => {
     if (busyRef.current || !runningRef.current) return;
     if (!cameraRef.current || !permission?.granted) return;
     busyRef.current = true;
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.5,
-        skipProcessing: true,
-        base64: true,
-      });
-      const result = await getFormProvider().analyze({
-        exercise,
-        imageBase64: photo?.base64,
-        frameCount: 30,
-      });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, skipProcessing: true, base64: true });
+      const result = await getFormProvider().analyze({ exercise, imageBase64: photo?.base64, frameCount: 30 });
       setLast(result);
       if (typeof result.repCount === "number") setReps(result.repCount);
     } catch {
@@ -113,62 +94,31 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const stopLoop = useCallback(() => {
     runningRef.current = false;
     setRunning(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
   useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
-      requestPermission();
-    }
+    if (permission && !permission.granted && permission.canAskAgain) requestPermission();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   useEffect(() => {
     if (permission?.granted && !runningRef.current) startLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission?.granted]);
+  useEffect(() => () => { stopLoop(); void stopFormSession(); }, [stopLoop]);
 
-  useEffect(() => {
-    return () => {
-      stopLoop();
-      void stopFormSession();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const onBack = () => {
-    lightHaptic();
-    stopLoop();
-    void stopFormSession();
-    navigation.goBack();
-  };
-
+  const onBack = () => { heavyHaptic(); stopLoop(); void stopFormSession(); navigation.goBack(); };
   const togglePause = () => {
-    heavyHaptic();
-    if (runningRef.current) {
-      stopLoop();
-      setStatusMsg("已暂停 · 点击继续");
-    } else {
-      startLoop();
-    }
-  };
-
-  const onEnd = () => {
-    heavyHaptic();
-    stopLoop();
-    void stopFormSession();
-    navigation.goBack();
+    lightHaptic();
+    if (runningRef.current) { stopLoop(); setStatusMsg("已暂停 · 点击继续"); }
+    else startLoop();
   };
 
   const cameraReady = permission?.granted === true;
   const tone: StatusTone = (last?.statusColor as StatusTone) ?? "idle";
   const palette = toneOf(tone);
-  const primaryCue =
-    last?.primaryCue ?? last?.correctionText ?? "站到画面中央，开始动作";
-  const secondaryCue = last?.secondaryCue ?? "实时纠错提示会显示在这里";
+  const primaryCue = last?.primaryCue ?? last?.correctionText ?? "站到画面中央，开始动作";
+  const secondaryCue = last?.secondaryCue ?? "AI 实时分析你的每一下";
   const phaseText = last?.phase ? PHASE_LABEL[last.phase] ?? last.phase : "—";
 
   return (
@@ -179,80 +129,68 @@ export default function TrainingScreen({ navigation, route }: Props) {
         <View style={[StyleSheet.absoluteFill, styles.noCam]}>
           <Text style={styles.noCamEmoji}>📷</Text>
           <Text style={styles.noCamText}>
-            {permission?.canAskAgain === false
-              ? "摄像头未授权\n请在系统设置中开启后返回"
-              : "正在请求摄像头权限…"}
+            {permission?.canAskAgain === false ? "摄像头未授权\n请在系统设置中开启后返回" : "正在请求摄像头权限…"}
           </Text>
           {permission?.canAskAgain !== false && (
-            <PrimaryButton
-              label="允许使用摄像头"
-              onPress={requestPermission}
-              style={{ marginTop: spacing(5), alignSelf: "stretch", marginHorizontal: spacing(8) }}
-            />
+            <Pressable style={styles.permBtn} onPress={requestPermission}>
+              <Text style={styles.permBtnText}>允许使用摄像头</Text>
+            </Pressable>
           )}
         </View>
       )}
 
-      <SafeAreaView style={styles.overlay} edges={["top", "bottom"]} pointerEvents="box-none">
-        {/* ── 顶部栏 (BlurView) ── */}
-        <BlurView intensity={20} tint="dark" style={styles.topBar}>
-          <GlassBtn label="‹  返回" onPress={onBack} />
-          <View style={[styles.statusBadge, { backgroundColor: palette.color }]}>
-            <Text style={styles.statusBadgeText}>{palette.label}</Text>
-          </View>
-          <GlassBtn
-            label={facing === "front" ? "前置  ⇄" : "后置  ⇄"}
-            onPress={() => {
-              lightHaptic();
-              setFacing((f) => (f === "front" ? "back" : "front"));
-            }}
-          />
-        </BlurView>
+      {/* 上下渐变遮罩，提升叠加层可读性与高级感 */}
+      <LinearGradient
+        colors={["rgba(8,11,16,0.78)", "rgba(8,11,16,0)", "rgba(8,11,16,0)", "rgba(8,11,16,0.9)"]}
+        locations={[0, 0.28, 0.6, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-        {/* ── 次数 + 阶段 ── */}
-        <View style={styles.metrics} pointerEvents="none">
-          <Animated.View style={[styles.repCard, repAnimatedStyle]}>
-            <BlurView intensity={15} tint="dark" style={styles.repBlur}>
-              <Text style={styles.repValue}>{reps}</Text>
-              <Text style={styles.repLabel}>{EXERCISE_LABEL[exercise]} · 次数</Text>
-            </BlurView>
-          </Animated.View>
-          <View style={styles.phaseChip}>
-            <BlurView intensity={20} tint="dark" style={styles.phaseBlur}>
-              <Text style={styles.phaseLabel}>阶段</Text>
-              <Text style={styles.phaseValue}>{phaseText}</Text>
-            </BlurView>
-          </View>
+      <SafeAreaView style={styles.overlay} edges={["top", "bottom"]} pointerEvents="box-none">
+        {/* 顶部 */}
+        <View style={styles.topBar}>
+          <GlassBtn label="‹" round onPress={onBack} />
+          <BlurView intensity={28} tint="dark" style={styles.exerciseChip}>
+            <View style={[styles.toneDot, { backgroundColor: palette.color }]} />
+            <Text style={styles.exerciseChipText}>{EXERCISE_LABEL[exercise]}</Text>
+          </BlurView>
+          <GlassBtn label="⇄" round onPress={() => { lightHaptic(); setFacing((f) => (f === "front" ? "back" : "front")); }} />
         </View>
 
-        {/* ── 底部反馈 + 控制 ── */}
-        <View style={styles.bottom}>
-          <GlassCard style={styles.cueCard} intensity={30}>
-            <View style={[styles.cueLeftBar, { backgroundColor: palette.color }]} />
-            <View style={styles.cueContent}>
-              <View style={styles.cueHeader}>
-                <View style={[styles.cueDot, { backgroundColor: palette.color }]} />
-                <Text style={[styles.cueTag, { color: palette.color }]}>{palette.label}</Text>
-              </View>
-              <Text style={styles.cuePrimary} numberOfLines={2}>{primaryCue}</Text>
-              <Text style={styles.cueSecondary} numberOfLines={2}>{secondaryCue}</Text>
+        {/* 中部：状态环 + 次数 */}
+        <View style={styles.center}>
+          <Animated.View style={[styles.ring, { borderColor: palette.color }, ringStyle]}>
+            <View style={styles.ringInner}>
+              <Text style={styles.repValue}>{reps}</Text>
+              <Text style={styles.repUnit}>次</Text>
             </View>
-          </GlassCard>
+          </Animated.View>
+          <BlurView intensity={24} tint="dark" style={styles.statusPill}>
+            <View style={[styles.toneDot, { backgroundColor: palette.color }]} />
+            <Text style={[styles.statusPillText, { color: palette.color }]}>{palette.label}</Text>
+            <Text style={styles.phaseText}>· {phaseText}</Text>
+          </BlurView>
+        </View>
+
+        {/* 底部：提示卡 + 控制 */}
+        <View style={styles.bottom}>
+          <BlurView intensity={32} tint="dark" style={[styles.cueCard, { borderLeftColor: palette.color }]}>
+            <Text style={styles.cuePrimary} numberOfLines={2}>{primaryCue}</Text>
+            <Text style={styles.cueSecondary} numberOfLines={2}>{secondaryCue}</Text>
+          </BlurView>
 
           <View style={styles.controls}>
-            <PrimaryButton
-              label={running ? "暂停" : "继续"}
+            <Pressable
               onPress={togglePause}
               disabled={!cameraReady}
-              tone={running ? colors.warn : colors.good}
-              style={styles.ctrlBtn}
-            />
-            <PrimaryButton
-              label="结束"
-              onPress={onEnd}
-              tone={colors.alert}
-              style={styles.ctrlBtn}
-            />
+              style={[styles.ctrlBtn, { backgroundColor: running ? "rgba(255,255,255,0.16)" : colors.accent }]}
+            >
+              <Text style={styles.ctrlText}>{running ? "暂停" : "继续"}</Text>
+            </Pressable>
+            <Pressable onPress={onBack} style={[styles.ctrlBtn, styles.ctrlEnd]}>
+              <Text style={styles.ctrlText}>结束</Text>
+            </Pressable>
           </View>
 
           <Text style={styles.statusMsg}>{statusMsg}</Text>
@@ -262,135 +200,51 @@ export default function TrainingScreen({ navigation, route }: Props) {
   );
 }
 
-function GlassBtn({ label, onPress }: { label: string; onPress: () => void }) {
+function GlassBtn({ label, onPress, round }: { label: string; onPress: () => void; round?: boolean }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.glassBtn, pressed && { opacity: 0.6 }]}
-    >
-      <Text style={styles.glassBtnText}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+      <BlurView intensity={28} tint="dark" style={[styles.glassBtn, round && styles.glassBtnRound]}>
+        <Text style={styles.glassBtnText}>{label}</Text>
+      </BlurView>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
-  noCam: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing(6),
-    backgroundColor: colors.bgElevated,
-  },
+  noCam: { alignItems: "center", justifyContent: "center", padding: spacing(6), backgroundColor: colors.darkBg },
   noCamEmoji: { fontSize: 48, marginBottom: spacing(4) },
-  noCamText: {
-    color: colors.textMuted,
-    textAlign: "center",
-    lineHeight: 24,
-    fontSize: font.body,
-  },
+  noCamText: { color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 24, fontSize: font.body },
+  permBtn: { marginTop: spacing(5), backgroundColor: colors.accent, paddingVertical: spacing(3.5), paddingHorizontal: spacing(8), borderRadius: radius.md },
+  permBtnText: { color: colors.onAccent, fontWeight: "800", fontSize: font.h3 },
 
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "space-between",
-  },
+  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between", padding: spacing(4) },
 
-  /* ── 顶部 ── */
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing(4),
-    paddingVertical: spacing(3),
-    overflow: "hidden",
-  },
-  glassBtn: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-    paddingVertical: spacing(2),
-    paddingHorizontal: spacing(3.5),
-    borderRadius: radius.pill,
-  },
-  glassBtnText: { color: colors.text, fontWeight: "600", fontSize: font.small },
-  statusBadge: {
-    paddingVertical: spacing(2),
-    paddingHorizontal: spacing(5),
-    borderRadius: radius.pill,
-    ...elevation("float"),
-  },
-  statusBadgeText: { color: "#000", fontWeight: "800", fontSize: font.small, letterSpacing: 0.5 },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  glassBtn: { paddingVertical: spacing(2.5), paddingHorizontal: spacing(4), borderRadius: radius.pill, overflow: "hidden", borderWidth: 1, borderColor: colors.darkBorder },
+  glassBtnRound: { width: 44, height: 44, paddingVertical: 0, paddingHorizontal: 0, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  glassBtnText: { color: "#fff", fontWeight: "800", fontSize: font.h2 },
+  exerciseChip: { flexDirection: "row", alignItems: "center", gap: spacing(2), paddingVertical: spacing(2.5), paddingHorizontal: spacing(4), borderRadius: radius.pill, overflow: "hidden", borderWidth: 1, borderColor: colors.darkBorder },
+  exerciseChipText: { color: "#fff", fontWeight: "800", fontSize: font.body },
 
-  /* ── 中部次数 ── */
-  metrics: { alignItems: "center", gap: spacing(2) },
-  repCard: {
-    borderRadius: radius.xl,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  repBlur: {
-    alignItems: "center",
-    paddingVertical: spacing(3),
-    paddingHorizontal: spacing(10),
-  },
-  repValue: {
-    color: colors.text,
-    fontSize: font.bigNumber,
-    fontWeight: "900",
-    lineHeight: font.bigNumber + 8,
-    letterSpacing: -3,
-  },
-  repLabel: {
-    color: colors.textMuted,
-    fontSize: font.small,
-    fontWeight: "500",
-    marginTop: spacing(0.5),
-  },
-  phaseChip: { borderRadius: radius.pill, overflow: "hidden" },
-  phaseBlur: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing(2),
-    paddingVertical: spacing(2),
-    paddingHorizontal: spacing(4),
-  },
-  phaseLabel: {
-    color: colors.textFaint,
-    fontSize: font.caption,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  phaseValue: { color: colors.text, fontSize: font.body, fontWeight: "700" },
+  center: { alignItems: "center", gap: spacing(4) },
+  ring: { width: RING, height: RING, borderRadius: RING / 2, borderWidth: 6, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(8,11,16,0.25)" },
+  ringInner: { alignItems: "center", justifyContent: "center", flexDirection: "row" },
+  repValue: { color: "#fff", fontSize: 96, fontWeight: "900", letterSpacing: -3, lineHeight: 100 },
+  repUnit: { color: "rgba(255,255,255,0.7)", fontSize: font.h2, fontWeight: "700", marginLeft: spacing(2), marginBottom: spacing(4) },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: spacing(2), paddingVertical: spacing(2), paddingHorizontal: spacing(4), borderRadius: radius.pill, overflow: "hidden", borderWidth: 1, borderColor: colors.darkBorder },
+  toneDot: { width: 8, height: 8, borderRadius: 4 },
+  statusPillText: { fontSize: font.body, fontWeight: "800" },
+  phaseText: { color: "rgba(255,255,255,0.7)", fontSize: font.small, fontWeight: "600" },
 
-  /* ── 底部 ── */
-  bottom: { gap: spacing(3), paddingHorizontal: spacing(4) },
-  cueCard: {
-    flexDirection: "row",
-    overflow: "hidden",
-    padding: 0,
-    ...elevation("hero"),
-  },
-  cueLeftBar: { width: 5 },
-  cueContent: {
-    flex: 1,
-    padding: spacing(4.5),
-  },
-  cueHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing(2),
-    marginBottom: spacing(2.5),
-  },
-  cueDot: { width: 8, height: 8, borderRadius: 4 },
-  cueTag: { fontSize: font.caption, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  cuePrimary: { color: colors.text, fontSize: font.h2, fontWeight: "700", lineHeight: 28 },
-  cueSecondary: {
-    color: colors.textMuted,
-    fontSize: font.small,
-    marginTop: spacing(2),
-    lineHeight: 20,
-  },
+  bottom: { gap: spacing(3.5) },
+  cueCard: { borderRadius: radius.lg, padding: spacing(4.5), borderLeftWidth: 5, overflow: "hidden" },
+  cuePrimary: { color: "#fff", fontSize: font.h2, fontWeight: "800", lineHeight: 28 },
+  cueSecondary: { color: "rgba(255,255,255,0.72)", fontSize: font.small, marginTop: spacing(2), lineHeight: 19 },
 
   controls: { flexDirection: "row", gap: spacing(3) },
-  ctrlBtn: { flex: 1 },
-  statusMsg: { color: colors.textFaint, fontSize: font.caption, textAlign: "center" },
+  ctrlBtn: { flex: 1, minHeight: 54, borderRadius: radius.md, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.darkBorder },
+  ctrlEnd: { backgroundColor: "rgba(255,77,79,0.92)", borderColor: "transparent" },
+  ctrlText: { color: "#fff", fontSize: font.h3, fontWeight: "800" },
+  statusMsg: { color: "rgba(255,255,255,0.65)", fontSize: font.tiny, textAlign: "center" },
 });

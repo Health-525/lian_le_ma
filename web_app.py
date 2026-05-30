@@ -32,6 +32,22 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULT_FOLDER'], exist_ok=True)  # 确保目录存在
 
+
+# ---- CORS 支持（允许 App web 版 / 浏览器跨域调用，手机端无影响）----
+@app.after_request
+def _add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
+
+@app.route('/api/<path:_any>', methods=['OPTIONS'])
+def _cors_preflight(_any):
+    # 预检请求直接放行（CORS 头由 after_request 统一添加）。
+    return ('', 204)
+
+
 def _resolve_runtime_dir():
     configured_runtime_dir = os.getenv("POSE_RUNTIME_DIR")
     if configured_runtime_dir:

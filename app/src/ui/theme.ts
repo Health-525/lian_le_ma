@@ -1,96 +1,98 @@
 /**
- * 设计系统 token —— iOS Dark Mode 语义。
+ * 设计系统 token —— Keep 风格（浅色 + 标志绿）。
  *
- * 原则：Apple Fitness+ 风格，纯黑基底、毛玻璃层次、SF 排版、弹簧动效。
- * 仅面向 iOS，不做 Android 兼容。
+ * 主界面：干净白底、大量留白、Keep 绿主色、轻投影卡片。
+ * 摄像头训练页例外：使用深色沉浸式（见 darkSurface 等），营造高级感。
  */
 import { Platform, type ViewStyle } from "react-native";
 
 export const colors = {
-  // iOS 系统背景层次
-  bg: "#000000",
-  bgElevated: "#1C1C1E",
-  surface: "#2C2C2E",
-  surfaceAlt: "#3A3A3C",
-  border: "#38383A",
-  borderSubtle: "#2C2C2E",
+  // 浅色基底
+  bg: "#FFFFFF",
+  bgElevated: "#F7F8FA",
+  surface: "#FFFFFF",
+  surfaceAlt: "#F2F4F7",
+  border: "#E6E9EF",
+  borderSubtle: "#EEF1F5",
 
-  // iOS SF 文字色系
-  text: "#FFFFFF",
-  textMuted: "#EBEBF5",
-  textFaint: "#8E8E93",
+  // 文字（深色字）
+  text: "#1A1D23",
+  textMuted: "#6B7280",
+  textFaint: "#9AA1AC",
 
-  // iOS 语义系统色
-  accent: "#0A84FF",
-  accentDeep: "#0066CC",
-  accentSoft: "rgba(10,132,255,0.12)",
+  // 品牌主色：Keep 绿
+  accent: "#02C56E",
+  accentDeep: "#00A85D",
+  accentSoft: "rgba(2,197,110,0.12)",
+  onAccent: "#FFFFFF",
 
-  good: "#30D158",
-  warn: "#FFD60A",
-  alert: "#FF453A",
-  idle: "#8E8E93",
+  // 语义状态（摄像头训练页用）
+  good: "#02C56E",
+  warn: "#F5A623",
+  alert: "#FF4D4F",
+  idle: "#9AA1AC",
+
+  // 深色沉浸（仅训练页）
+  darkBg: "#0B0E13",
+  darkSurface: "rgba(20,24,32,0.72)",
+  darkBorder: "rgba(255,255,255,0.14)",
+  scrim: "rgba(8,11,16,0.45)",
+  scrimStrong: "rgba(8,11,16,0.8)",
+  glass: "rgba(20,24,32,0.6)",
 } as const;
 
 /** 8pt 网格间距。 */
 export const spacing = (n: number) => n * 4;
 
 export const radius = {
-  sm: 10,
-  md: 14,
-  lg: 18,
-  xl: 24,
+  sm: 12,
+  md: 16,
+  lg: 22,
+  xl: 28,
   pill: 999,
 } as const;
 
-/** iOS SF 排版层级 */
 export const font = {
-  bigNumber: 96,
-  display: 48,
-  h1: 34,
-  h2: 22,
+  display: 40,
+  h1: 28,
+  h2: 21,
   h3: 17,
-  body: 17,
-  small: 15,
-  tiny: 13,
-  caption: 11,
+  body: 15,
+  small: 13,
+  tiny: 11,
 } as const;
 
-/** BlurView intensity */
-export const blur = {
-  light: 10,
-  medium: 20,
-  heavy: 40,
-} as const;
-
+/** 跨平台阴影（浅色风格用柔和投影）。 */
 export function elevation(level: "card" | "float" | "hero"): ViewStyle {
   const map = {
-    card: { o: 0.08, r: 8, y: 4 },
-    float: { o: 0.14, r: 16, y: 8 },
-    hero: { o: 0.24, r: 28, y: 12 },
+    card: { e: 2, o: 0.06, r: 12, y: 4, c: "#1A1D23" },
+    float: { e: 6, o: 0.12, r: 20, y: 8, c: "#1A1D23" },
+    hero: { e: 10, o: 0.22, r: 28, y: 12, c: "#02C56E" },
   } as const;
-  const { o, r, y } = map[level];
+  const { e, o, r, y, c } = map[level];
   return Platform.select<ViewStyle>({
     ios: {
-      shadowColor: "#000",
+      shadowColor: c,
       shadowOpacity: o,
       shadowRadius: r,
       shadowOffset: { width: 0, height: y },
     },
+    android: { elevation: e },
     default: {},
   })!;
 }
 
+/** 状态色 → 调色板（摄像头训练页用）。 */
 export type StatusTone = "idle" | "good" | "warn" | "alert";
-
 export function toneOf(tone: StatusTone) {
   switch (tone) {
     case "good":
-      return { color: colors.good, label: "标准", tint: "rgba(48,209,88,0.14)" };
+      return { color: colors.good, label: "标准", tint: "rgba(2,197,110,0.18)" };
     case "warn":
-      return { color: colors.warn, label: "注意", tint: "rgba(255,214,10,0.14)" };
+      return { color: colors.warn, label: "注意", tint: "rgba(245,166,35,0.18)" };
     case "alert":
-      return { color: colors.alert, label: "需纠正", tint: "rgba(255,69,58,0.14)" };
+      return { color: colors.alert, label: "需纠正", tint: "rgba(255,77,79,0.18)" };
     default:
-      return { color: colors.idle, label: "等待中", tint: "rgba(142,142,147,0.14)" };
+      return { color: colors.idle, label: "等待中", tint: "rgba(154,161,172,0.18)" };
   }
 }

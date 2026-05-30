@@ -1,217 +1,80 @@
 /**
- * 音色页（音色 tab）—— iOS 底部 Sheet 呈现。
- *
- * 进入后自动弹出音色选择面板，选中或点击遮罩关闭并回到健身 tab。
+ * 音色选择页（我的 → 设置 → 音色）。Keep 风格浅色。
+ * 选择训练时教练播报使用的音色，状态写入全局设置。
  */
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BlurView } from "expo-blur";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { colors, font, radius, spacing } from "../ui/theme";
-import { springBouncy, duration } from "../ui/animation";
+import { Card } from "../ui/components";
+import { useSettings, VOICES } from "../store/settings";
 import { lightHaptic } from "../ui/haptics";
+import { colors, font, radius, spacing } from "../ui/theme";
 
-interface VoiceOption {
-  id: string;
-  name: string;
-  desc: string;
-  emoji: string;
-  locked?: boolean;
-}
-
-const VOICES: VoiceOption[] = [
-  { id: "default", name: "系统音色", desc: "设备自带中文语音，免费即用", emoji: "🗣️" },
-  { id: "energetic", name: "活力教练", desc: "节奏明快，适合高强度训练", emoji: "🔥" },
-  { id: "calm", name: "沉稳教练", desc: "语气平稳，适合控制与拉伸", emoji: "🧘" },
-  { id: "cloned", name: "克隆音色", desc: "上传样本，定制专属声音", emoji: "✨", locked: true },
-];
-
-export default function VoiceScreen({ onClose }: { onClose: () => void }) {
-  const [selected, setSelected] = useState("default");
-
-  const backdropOpacity = useSharedValue(0);
-  const sheetTranslateY = useSharedValue(300);
-
-  useEffect(() => {
-    backdropOpacity.value = withTiming(1, { duration: duration.normal });
-    sheetTranslateY.value = withSpring(0, springBouncy);
-  }, [backdropOpacity, sheetTranslateY]);
-
-  const dismiss = useCallback(() => {
-    backdropOpacity.value = withTiming(0, { duration: duration.fast });
-    sheetTranslateY.value = withSpring(300, springBouncy);
-    setTimeout(onClose, 250);
-  }, [backdropOpacity, sheetTranslateY, onClose]);
-
-  const selectVoice = useCallback(
-    (id: string) => {
-      lightHaptic();
-      setSelected(id);
-      setTimeout(dismiss, 400);
-    },
-    [dismiss]
-  );
-
-  const backdropStyle = useAnimatedStyle(() => ({
-    opacity: backdropOpacity.value,
-  }));
-
-  const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetTranslateY.value }],
-  }));
+export default function VoiceScreen() {
+  const { voiceId, setVoiceId } = useSettings();
 
   return (
-    <View style={styles.root}>
-      <Animated.View style={[styles.backdrop, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
-      </Animated.View>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>音色</Text>
+        <Text style={styles.tagline}>选择训练时教练的播报声音</Text>
 
-      <Animated.View style={[styles.sheet, sheetStyle]}>
-        <BlurView intensity={40} tint="dark" style={styles.sheetBlur}>
-          <View style={styles.handle}>
-            <View style={styles.handleBar} />
-          </View>
-          <Text style={styles.title}>选择教练音色</Text>
-
-          <View style={styles.list}>
-            {VOICES.map((v) => {
-              const active = v.id === selected;
-              return (
-                <Pressable
-                  key={v.id}
-                  disabled={v.locked}
-                  onPress={() => selectVoice(v.id)}
-                  style={({ pressed }) => [
-                    styles.row,
-                    active && styles.rowActive,
-                    pressed && styles.rowPressed,
-                  ]}
-                >
-                  <View style={styles.iconBox}>
-                    <Text style={styles.icon}>{v.emoji}</Text>
-                  </View>
-                  <View style={styles.info}>
+        <View style={styles.list}>
+          {VOICES.map((v) => {
+            const active = v.id === voiceId;
+            return (
+              <Card
+                key={v.id}
+                style={[styles.row, active && styles.rowActive]}
+                onPress={() => {
+                  if (v.locked) return;
+                  lightHaptic();
+                  setVoiceId(v.id);
+                }}
+              >
+                <View style={styles.iconBox}>
+                  <Text style={styles.icon}>{v.emoji}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.nameRow}>
                     <Text style={styles.name}>{v.name}</Text>
-                    <Text style={styles.desc}>{v.desc}</Text>
+                    {v.locked && <Text style={styles.lock}>即将开放</Text>}
                   </View>
-                  {v.locked ? (
-                    <Text style={styles.lockIcon}>🔒</Text>
-                  ) : (
-                    <View style={[styles.radio, active && styles.radioOn]}>
-                      {active && (
-                        <Animated.View style={styles.radioDot} />
-                      )}
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
+                  <Text style={styles.desc}>{v.desc}</Text>
+                </View>
+                <View style={[styles.radio, active && styles.radioOn]}>
+                  {active && <View style={styles.radioDot} />}
+                </View>
+              </Card>
+            );
+          })}
+        </View>
 
-          <Text style={styles.disclaimer}>
-            音色仅影响语音播报，不影响动作识别结果。
-          </Text>
-        </BlurView>
-      </Animated.View>
-    </View>
+        <Text style={styles.disclaimer}>音色仅影响语音播报，不影响动作识别结果。</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-    zIndex: 100,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  sheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  sheetBlur: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    overflow: "hidden",
-    padding: spacing(5),
-    paddingBottom: spacing(9),
-  },
-  handle: { alignItems: "center", marginBottom: spacing(3) },
-  handleBar: {
-    width: 36,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: colors.border,
-  },
-  title: {
-    fontSize: font.h1,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: spacing(5),
-  },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  container: { padding: spacing(5), paddingBottom: spacing(8) },
+  title: { fontSize: font.h1, fontWeight: "900", color: colors.text, marginTop: spacing(2) },
+  tagline: { fontSize: font.body, color: colors.textMuted, marginTop: spacing(1), marginBottom: spacing(6) },
 
-  list: { gap: spacing(2.5) },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing(3.5),
-    paddingVertical: spacing(3.5),
-    paddingHorizontal: spacing(3),
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  rowActive: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: colors.accent,
-  },
-  rowPressed: { opacity: 0.7 },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.sm,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  list: { gap: spacing(3) },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing(4) },
+  rowActive: { borderColor: colors.accent, borderWidth: 2 },
+  iconBox: { width: 50, height: 50, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
   icon: { fontSize: 24 },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: spacing(2) },
+  name: { fontSize: font.h3, fontWeight: "700", color: colors.text },
+  lock: { fontSize: font.tiny, color: colors.accentDeep, backgroundColor: colors.accentSoft, paddingHorizontal: spacing(2), paddingVertical: 2, borderRadius: radius.sm, overflow: "hidden", fontWeight: "700" },
+  desc: { fontSize: font.small, color: colors.textFaint, marginTop: spacing(0.5) },
 
-  info: { flex: 1, gap: 2 },
-  name: { fontSize: font.h3, fontWeight: "600", color: colors.text },
-  desc: { fontSize: font.small, color: colors.textFaint },
+  radio: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  radioOn: { borderColor: colors.accent },
+  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.accent },
 
-  radio: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioOn: { borderColor: colors.accent, backgroundColor: colors.accent },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-  },
-  lockIcon: { fontSize: 16 },
-
-  disclaimer: {
-    marginTop: spacing(6),
-    color: colors.textFaint,
-    fontSize: font.caption,
-    textAlign: "center",
-  },
+  disclaimer: { marginTop: spacing(8), color: colors.textFaint, fontSize: font.tiny, textAlign: "center" },
 });

@@ -1,12 +1,13 @@
 /**
- * 通用 UI 基元 —— iOS 风格升级版。
+ * 通用 UI 基元 —— 基于 RN 内置 Animated（无原生依赖，Expo Go 必跑）。
  *
  * Card / PrimaryButton / GhostButton / Pill / GlassCard。
- * 全部带弹簧动效 + 触觉反馈。
+ * 按压时轻微缩放 + 触觉反馈。
  */
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -15,15 +16,20 @@ import {
   type ViewStyle,
 } from "react-native";
 import { BlurView } from "expo-blur";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
 
 import { colors, elevation, font, radius, spacing } from "./theme";
-import { springBouncy, springGentle } from "./animation";
-import { heavyHaptic, lightHaptic } from "./haptics";
+import { springGentle, springBouncy } from "./animation";
+import { lightHaptic, heavyHaptic } from "./haptics";
+
+/** 通用按压缩放 hook。 */
+function usePressScale() {
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressIn = (to = 0.97) =>
+    Animated.spring(scale, { toValue: to, useNativeDriver: true, ...springGentle }).start();
+  const pressOut = () =>
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, ...springBouncy }).start();
+  return { scale, pressIn, pressOut };
+}
 
 /* ───────── Pill ───────── */
 
@@ -47,7 +53,7 @@ export function Pill({
           : { backgroundColor: tint, borderColor: color, borderWidth: 1 },
       ]}
     >
-      <Text style={[styles.pillText, { color: solid ? "#000" : color }]}>{text}</Text>
+      <Text style={[styles.pillText, { color: solid ? colors.onAccent : color }]}>{text}</Text>
     </View>
   );
 }
@@ -63,22 +69,10 @@ export function Card({
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
 }) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.97, springGentle);
-    lightHaptic();
-  };
-  const handlePressOut = () => {
-    scale.value = withSpring(1, springBouncy);
-  };
+  const { scale, pressIn, pressOut } = usePressScale();
 
   const content = (
-    <Animated.View style={[styles.card, animatedStyle, style]}>
+    <Animated.View style={[styles.card, { transform: [{ scale }] }, style]}>
       {children}
     </Animated.View>
   );
@@ -87,8 +81,8 @@ export function Card({
     return (
       <Pressable
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPressIn={() => { pressIn(); lightHaptic(); }}
+        onPressOut={pressOut}
       >
         {content}
       </Pressable>
@@ -132,25 +126,14 @@ export function PrimaryButton({
   tone?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const { scale, pressIn, pressOut } = usePressScale();
 
   return (
-    <Animated.View style={[animatedStyle, style]}>
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <Pressable
-        onPress={() => {
-          heavyHaptic();
-          onPress();
-        }}
-        onPressIn={() => {
-          scale.value = withSpring(0.96, springGentle);
-        }}
-        onPressOut={() => {
-          scale.value = withSpring(1, springBouncy);
-        }}
+        onPress={() => { heavyHaptic(); onPress(); }}
+        onPressIn={() => pressIn(0.96)}
+        onPressOut={pressOut}
         disabled={disabled || loading}
         style={({ pressed }) => [
           styles.btn,
@@ -182,25 +165,14 @@ export function GhostButton({
   tone?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const { scale, pressIn, pressOut } = usePressScale();
 
   return (
-    <Animated.View style={[animatedStyle, style]}>
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <Pressable
-        onPress={() => {
-          lightHaptic();
-          onPress();
-        }}
-        onPressIn={() => {
-          scale.value = withSpring(0.97, springGentle);
-        }}
-        onPressOut={() => {
-          scale.value = withSpring(1, springBouncy);
-        }}
+        onPress={() => { lightHaptic(); onPress(); }}
+        onPressIn={() => pressIn()}
+        onPressOut={pressOut}
         style={({ pressed }) => [
           styles.ghost,
           { borderColor: tone },
@@ -237,7 +209,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.darkBorder,
   },
 
   btn: {
