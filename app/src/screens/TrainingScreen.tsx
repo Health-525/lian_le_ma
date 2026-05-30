@@ -17,7 +17,6 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import {
   getFormProvider,
-  isModelConnected,
   stopFormSession,
   type FormAnalysisResult,
 } from "../analysis";
@@ -28,7 +27,7 @@ import type { WorkoutStackParamList } from "../navigation";
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, "Training">;
 
-const FRAME_INTERVAL_MS = 600;
+const FRAME_INTERVAL_MS = 150;
 const RING = 260;
 
 const PHASE_LABEL: Record<string, string> = {
@@ -49,8 +48,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const busyRef = useRef(false);
   const runningRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const connected = isModelConnected();
+  const failCountRef = useRef(0);
 
   // 状态环呼吸脉冲
   const pulse = useRef(new Animated.Value(1)).current;
@@ -71,12 +69,19 @@ export default function TrainingScreen({ navigation, route }: Props) {
     if (!cameraRef.current || !permission?.granted) return;
     busyRef.current = true;
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, skipProcessing: true, base64: true });
-      const result = await getFormProvider().analyze({ exercise, imageBase64: photo?.base64, frameCount: 30 });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.3, skipProcessing: true, base64: true, shutterSound: false, imageType: "jpg" });
+      const result = await getFormProvider().analyze({ exercise, imageBase64: photo?.base64 });
       setLast(result);
       if (typeof result.repCount === "number") setReps(result.repCount);
+      // 成功一帧：清零失败计数，恢复正常状态文字。
+      failCountRef.current = 0;
+      setStatusMsg("训练中 · 实时分析");
     } catch {
-      setStatusMsg("帧分析失败，请检查模型服务连接");
+      // 仅在连续多帧失败时才提示，避免偶发单帧抖动误报。
+      failCountRef.current += 1;
+      if (failCountRef.current >= 3) {
+        setStatusMsg("帧分析失败，请检查模型服务连接");
+      }
     } finally {
       busyRef.current = false;
     }
@@ -86,10 +91,10 @@ export default function TrainingScreen({ navigation, route }: Props) {
     if (runningRef.current) return;
     runningRef.current = true;
     setRunning(true);
-    setStatusMsg(connected ? "训练中 · 已接入模型" : "训练中 · 演示模式");
+    setStatusMsg("训练中 · 实时分析");
     sendFrame();
     timerRef.current = setInterval(sendFrame, FRAME_INTERVAL_MS);
-  }, [sendFrame, connected]);
+  }, [sendFrame]);
 
   const stopLoop = useCallback(() => {
     runningRef.current = false;

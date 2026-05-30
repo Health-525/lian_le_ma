@@ -4,21 +4,21 @@
  * 选中动作后点 GO 进入实时姿势矫正。
  */
 import { useRef, useState } from "react";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
-import { isModelConnected } from "../analysis";
 import { springBouncy, springGentle } from "../ui/animation";
 import { heavyHaptic, lightHaptic } from "../ui/haptics";
 import { colors, elevation, font, radius, spacing } from "../ui/theme";
 import { EXERCISES, type SupportedExercise } from "../types";
 import type { WorkoutStackParamList } from "../navigation";
 
+const LOGO = require("../../assets/logo.png");
+
 type Props = NativeStackScreenProps<WorkoutStackParamList, "Pick">;
 
 export default function PickScreen({ navigation }: Props) {
-  const connected = isModelConnected();
   const [selected, setSelected] = useState<SupportedExercise>(EXERCISES[0]!.value);
   const current = EXERCISES.find((e) => e.value === selected) ?? EXERCISES[0]!;
 
@@ -30,18 +30,10 @@ export default function PickScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* 顶部品牌 + 连接状态 */}
+        {/* 顶部品牌：居中大 logo */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.brand}>练了吗</Text>
-            <Text style={styles.subtitle}>AI 实时姿势矫正</Text>
-          </View>
-          <View style={[styles.statusDot, { backgroundColor: connected ? colors.accentSoft : colors.surfaceAlt }]}>
-            <View style={[styles.dot, { backgroundColor: connected ? colors.accent : colors.textFaint }]} />
-            <Text style={[styles.statusText, { color: connected ? colors.accentDeep : colors.textFaint }]}>
-              {connected ? "模型已连接" : "演示模式"}
-            </Text>
-          </View>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.subtitle}>AI 实时姿势矫正</Text>
         </View>
 
         {/* 动作选择 */}
@@ -110,8 +102,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing(5), paddingBottom: spacing(8) },
 
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: spacing(2) },
-  brand: { fontSize: font.display, fontWeight: "900", color: colors.text, letterSpacing: -1 },
+  header: { alignItems: "center", marginTop: spacing(4), marginBottom: spacing(2) },
+  logo: { width: 200, height: 200 },
   subtitle: { fontSize: font.body, color: colors.textMuted, marginTop: spacing(1) },
   statusDot: { flexDirection: "row", alignItems: "center", gap: spacing(1.5), paddingVertical: spacing(1.5), paddingHorizontal: spacing(3), borderRadius: radius.pill, marginTop: spacing(2) },
   dot: { width: 7, height: 7, borderRadius: 4 },

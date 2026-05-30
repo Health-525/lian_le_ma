@@ -1,10 +1,8 @@
 /**
  * 动作分析 Provider 抽象。
  *
- * 训练页只依赖这个接口，不关心判定来自本地桩还是远程模型。
- * - 未配置模型地址：StubFormProvider（本地假数据，扫码即跑）。
- * - 配了 EXPO_PUBLIC_MODEL_BASE_URL：ModelCoachProvider（直连 web_app.py）。
- * 切换逻辑见 ./index.ts。
+ * 训练页只依赖这个接口；唯一实现是 ModelCoachProvider（直连 web_app.py 真实模型）。
+ * 选择逻辑见 ./index.ts。
  */
 import type { SupportedExercise } from "../types";
 
@@ -17,12 +15,10 @@ export interface ProblemArea {
   severity: ConfidenceLevel;
 }
 
-/** 分析输入：动作类型 + 采集上下文。 */
+/** 分析输入：动作类型 + 采集到的图像。 */
 export interface FormContext {
   exercise: SupportedExercise;
-  /** 采集到的帧数（桩用它演示"帧数不足 → inconclusive"）。 */
-  frameCount?: number;
-  /** base64 图像（纯 base64 或 dataURL 都可），真实模型逐帧分析用。 */
+  /** base64 图像（纯 base64 或 dataURL 都可），模型逐帧分析用。 */
   imageBase64?: string;
 }
 
