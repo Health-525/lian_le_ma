@@ -83,11 +83,11 @@ export default function TrainingScreen({ navigation, route }: Props) {
         if (result.isStandard) standardRepsRef.current += 1;
         else correctionCountRef.current += 1;
       }
-      // 播放教练语音（本地预生成 mp3，防卡顿队列）
+      // 播放教练语音（计数 + 模型 speak_text）
       if (exercise === "squat") {
-        playSquatFeedback(result.repCount ?? 0, result.isStandard, result.speakText);
+        playSquatFeedback(result.repCount ?? 0, result.speakText);
       } else {
-        playGenericFeedback(result.isStandard, result.speakText);
+        playGenericFeedback(result.repCount ?? 0, result.speakText);
       }
       // 成功一帧：清零失败计数，恢复正常状态文字。
       failCountRef.current = 0;

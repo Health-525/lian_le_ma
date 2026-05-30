@@ -14,7 +14,6 @@ import type { SupportedExercise } from "../types";
 
 // ── 常量 ──────────────────────────────────────────────────────────────────
 const COOLDOWN_MS    = 1200;  // 两条语音之间的最小间隔
-const PRIO_ENCOURAGE = 1;
 const PRIO_COUNT     = 2;
 const PRIO_CORRECT   = 3;
 
@@ -127,28 +126,11 @@ let currentSound: Audio.Sound | null = null;
 // ── 训练状态 ──────────────────────────────────────────────────────────────
 let introPlaying       = false;  // intro 播放期间屏蔽计数/鼓励
 let lastAnnouncedRep   = 0;      // 上次播报的 rep 数（去重）
-let consecutiveGood    = 0;      // 连续标准次数
-let squat_good_idx     = 0;      // 深蹲鼓励轮播索引
-let good_form_idx      = 0;      // 通用鼓励轮播索引
-/** 上次播鼓励时的 rep 数，避免同一 rep 既播计数又播鼓励。 */
-let lastEncourageRep   = -1;
-
-const SQUAT_GOOD_FILES = [
-  "squat_good_1","squat_good_2","squat_good_3","squat_good_4",
-  "squat_good_5","squat_good_6","squat_good_7","squat_good_8",
-];
-const GOOD_FORM_FILES = [
-  "good_form_1","good_form_2","good_form_3","good_form_4","good_form_5",
-];
 
 // ── 重置 ──────────────────────────────────────────────────────────────────
 export function resetCoachState(): void {
   introPlaying     = false;
   lastAnnouncedRep = 0;
-  consecutiveGood  = 0;
-  squat_good_idx   = 0;
-  good_form_idx    = 0;
-  lastEncourageRep = -1;
   pendingKey       = null;
   pendingPrio      = 0;
 }
@@ -238,81 +220,54 @@ export function playIntro(exercise: SupportedExercise): Promise<void> {
 /**
  * 深蹲专用反馈。每帧调用一次。
  *
- * 决策树（严格按优先级，同帧只触发一个）：
- *  1. intro 播放中 → 只播纠错，其余全屏蔽
- *  2. rep 增加且需要播报 → 播计数（同时更新连续计数，但本帧不触发鼓励）
- *  3. 动作不标准 → 播纠错，重置连续计数
- *  4. 动作标准 → 更新连续计数，检查里程碑（3/5/8/10），或每5个播鼓励
- *     （里程碑和每5个互斥：里程碑优先）
+ * 逻辑：
+ *  1. intro 播放中 → 全部屏蔽
+ *  2. rep 增加且需要播报 → 播计数（本帧不再播 speak_text，避免叠音）
+ *  3. 模型有 speak_text → 直接播（纠错或鼓励由模型决定）
  */
 export function playSquatFeedback(
   rep: number,
-  isStandard: boolean,
   speakText?: string
 ): void {
   // ── 1. intro 屏蔽 ──
-  if (introPlaying) {
-    if (!isStandard && speakText) enqueue(TEXT_TO_FILE[speakText.trim()] ?? "", PRIO_CORRECT);
-    return;
-  }
+  if (introPlaying) return;
 
-  // ── 2. 计数播报 ──
+  // ── 2. 计数播报（rep 增加时） ──
   const isNewRep = rep > lastAnnouncedRep;
   if (isNewRep && shouldAnnounceRep(rep)) {
     lastAnnouncedRep = rep;
-    // 同时更新连续计数（计数帧也算一次标准/不标准）
-    if (isStandard) consecutiveGood += 1;
-    else consecutiveGood = 0;
     const key = repFileKey(rep);
-    if (key) { enqueue(key, PRIO_COUNT); return; }  // 本帧只播计数，不再触发鼓励
+    if (key) { enqueue(key, PRIO_COUNT); return; }  // 计数帧不再播 speak_text
   }
 
-  // ── 3. 动作不标准 → 纠错 ──
-  if (!isStandard) {
-    consecutiveGood = 0;
-    if (speakText) {
-      const fileKey = TEXT_TO_FILE[speakText.trim()];
-      if (fileKey) enqueue(fileKey, PRIO_CORRECT);
-    }
-    return;
-  }
-
-  // ── 4. 动作标准 → 更新连续计数，检查鼓励 ──
-  consecutiveGood += 1;
-
-  // 同一 rep 不重复触发鼓励（避免同帧多次调用）
-  if (rep === lastEncourageRep) return;
-
-  // 每 5 个标准动作播一条鼓励
-  if (consecutiveGood % 5 === 0) {
-    lastEncourageRep = rep;
-    const key = SQUAT_GOOD_FILES[squat_good_idx % SQUAT_GOOD_FILES.length]!;
-    squat_good_idx += 1;
-    enqueue(key, PRIO_ENCOURAGE);
+  // ── 3. 模型 speak_text（纠错 or 鼓励，由模型决定） ──
+  if (speakText) {
+    const fileKey = TEXT_TO_FILE[speakText.trim()];
+    if (fileKey) enqueue(fileKey, PRIO_CORRECT);
   }
 }
 
 /**
  * 其他动作通用反馈。
- * 标准时每 6 个播一条鼓励；不标准时播纠错。
+ * 计数 + 直接播模型 speak_text（纠错或鼓励由模型决定）。
  */
 export function playGenericFeedback(
-  isStandard: boolean,
+  rep: number,
   speakText?: string
 ): void {
-  if (isStandard) {
-    consecutiveGood += 1;
-    if (consecutiveGood % 6 === 0) {
-      const key = GOOD_FORM_FILES[good_form_idx % GOOD_FORM_FILES.length]!;
-      good_form_idx += 1;
-      enqueue(key, PRIO_ENCOURAGE);
-    }
-  } else {
-    consecutiveGood = 0;
-    if (speakText) {
-      const fileKey = TEXT_TO_FILE[speakText.trim()];
-      if (fileKey) enqueue(fileKey, PRIO_CORRECT);
-    }
+  if (introPlaying) return;
+
+  // 计数
+  if (rep > lastAnnouncedRep && shouldAnnounceRep(rep)) {
+    lastAnnouncedRep = rep;
+    const key = repFileKey(rep);
+    if (key) { enqueue(key, PRIO_COUNT); return; }
+  }
+
+  // 模型 speak_text
+  if (speakText) {
+    const fileKey = TEXT_TO_FILE[speakText.trim()];
+    if (fileKey) enqueue(fileKey, PRIO_CORRECT);
   }
 }
 
