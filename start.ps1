@@ -58,7 +58,7 @@ Write-Host "[2/3] Wrote $envFile" -ForegroundColor Green
 Write-Host "[3/3] Launching model server and Expo (separate windows)..." -ForegroundColor Green
 
 # 清除 Metro 缓存，确保手机拿到最新代码
-$metroCache = Join-Path $appDir "node_modules" ".cache"
+$metroCache = Join-Path (Join-Path $appDir "node_modules") ".cache"
 if (Test-Path $metroCache) {
     Remove-Item -Recurse -Force $metroCache -ErrorAction SilentlyContinue
     Write-Host "      Metro cache cleared." -ForegroundColor DarkGray
