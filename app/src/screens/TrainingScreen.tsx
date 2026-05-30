@@ -20,6 +20,7 @@ import {
   stopFormSession,
   type FormAnalysisResult,
 } from "../analysis";
+import { playIntro, playSquatFeedback, playGenericFeedback, stopCoachAudio } from "../voice/coachAudio";
 import { heavyHaptic, lightHaptic } from "../ui/haptics";
 import { colors, font, radius, spacing, toneOf, type StatusTone } from "../ui/theme";
 import { EXERCISE_LABEL } from "../types";
@@ -73,6 +74,12 @@ export default function TrainingScreen({ navigation, route }: Props) {
       const result = await getFormProvider().analyze({ exercise, imageBase64: photo?.base64 });
       setLast(result);
       if (typeof result.repCount === "number") setReps(result.repCount);
+      // 播放教练语音（本地预生成 mp3，防卡顿队列）
+      if (exercise === "squat") {
+        playSquatFeedback(result.repCount ?? 0, result.isStandard, result.speakText);
+      } else {
+        playGenericFeedback(result.isStandard, result.speakText);
+      }
       // 成功一帧：清零失败计数，恢复正常状态文字。
       failCountRef.current = 0;
       setStatusMsg("训练中 · 实时分析");
@@ -92,9 +99,11 @@ export default function TrainingScreen({ navigation, route }: Props) {
     runningRef.current = true;
     setRunning(true);
     setStatusMsg("训练中 · 实时分析");
+    // 播放开场引导语音（深蹲有专属引导，其他动作静默）
+    void playIntro(exercise);
     sendFrame();
     timerRef.current = setInterval(sendFrame, FRAME_INTERVAL_MS);
-  }, [sendFrame]);
+  }, [sendFrame, exercise]);
 
   const stopLoop = useCallback(() => {
     runningRef.current = false;
@@ -110,9 +119,9 @@ export default function TrainingScreen({ navigation, route }: Props) {
     if (permission?.granted && !runningRef.current) startLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission?.granted]);
-  useEffect(() => () => { stopLoop(); void stopFormSession(); }, [stopLoop]);
+  useEffect(() => () => { stopLoop(); void stopCoachAudio(); void stopFormSession(); }, [stopLoop]);
 
-  const onBack = () => { heavyHaptic(); stopLoop(); void stopFormSession(); navigation.goBack(); };
+  const onBack = () => { heavyHaptic(); stopLoop(); void stopCoachAudio(); void stopFormSession(); navigation.goBack(); };
   const togglePause = () => {
     lightHaptic();
     if (runningRef.current) { stopLoop(); setStatusMsg("已暂停 · 点击继续"); }
