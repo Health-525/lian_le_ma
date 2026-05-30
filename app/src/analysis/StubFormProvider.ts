@@ -1,9 +1,3 @@
-/**
- * 桩动作分析 Provider（本地确定性假数据）。
- *
- * 未配置模型地址时使用，打通"摄像头 → 分析 → 纠正"链路，扫码即可演示。
- * 按调用次序在标准/不标准之间交替，并模拟次数、状态色与播报。
- */
 import { composeCorrection } from "./corrections";
 import type {
   FormAnalysisProvider,
@@ -28,14 +22,13 @@ export class StubFormProvider implements FormAnalysisProvider {
         problemAreas: [],
         status: "inconclusive",
         statusColor: "warn",
-        primaryCue: "未识别到人，请让全身入镜。",
+        primaryCue: "暂时没有识别到完整人体，请让全身进入画面。",
       };
     }
 
     const idx = this.callIndex;
     this.callIndex += 1;
 
-    // 偶数次：标准；奇数次：不标准并给出纠正。
     if (idx % 2 === 0) {
       this.reps += 1;
       return {
@@ -45,9 +38,13 @@ export class StubFormProvider implements FormAnalysisProvider {
         status: "conclusive",
         statusColor: "good",
         repCount: this.reps,
-        primaryCue: "动作标准，保持节奏！",
-        phase: "up",
-        speakText: this.reps % 3 === 0 ? "节奏很稳，继续保持！" : undefined,
+        repDelta: 1,
+        primaryCue: "动作标准，继续保持当前节奏。",
+        phase: "top",
+        speakText:
+          this.reps % 3 === 0
+            ? `第${this.reps}次，节奏很稳，继续保持。`
+            : `第${this.reps}次`,
       };
     }
 
@@ -63,7 +60,7 @@ export class StubFormProvider implements FormAnalysisProvider {
       statusColor: "alert",
       correctionText,
       primaryCue: correctionText,
-      phase: "down",
+      phase: "lowering",
       repCount: this.reps,
       speakText: correctionText,
     };

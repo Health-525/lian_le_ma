@@ -1,8 +1,4 @@
-"""训练会话仓储（任务 3.2，需求 7.1 / 7.2 / 7.3 / 10）。
-
-负责会话主体与子项（动作组、动作分析、语音命令、报告）的持久化，
-并提供按用户时间倒序、分页的训练历史查询（需求 7.3）。
-"""
+"""Training session persistence."""
 
 from __future__ import annotations
 
@@ -25,6 +21,7 @@ from app.models.orm import (
     VoiceCommandEventORM,
 )
 from app.models.schemas import (
+    ExerciseBreakdown,
     FormAnalysis,
     ProblemArea,
     SessionReport,
@@ -47,17 +44,28 @@ def _form_to_model(row: FormAnalysisORM) -> FormAnalysis:
     )
 
 
+def _report_to_model(row: SessionReportORM | None) -> SessionReport | None:
+    if row is None:
+        return None
+    return SessionReport(
+        session_id=UUID(row.session_id),
+        form_score=row.form_score,
+        risk_notes=list(row.risk_notes or []),
+        correction_count=row.correction_count,
+        next_focus=row.next_focus,
+        summary_text=row.summary_text,
+        total_reps=row.total_reps,
+        duration_seconds=row.duration_seconds,
+        estimated_calories=row.estimated_calories,
+        overall_score=row.overall_score,
+        exercise_breakdown=[
+            ExerciseBreakdown.model_validate(item)
+            for item in (row.exercise_breakdown or [])
+        ],
+    )
+
+
 def _to_model(row: TrainingSessionORM) -> TrainingSession:
-    report = None
-    if row.report is not None:
-        report = SessionReport(
-            session_id=UUID(row.report.session_id),
-            form_score=row.report.form_score,
-            risk_notes=list(row.report.risk_notes or []),
-            correction_count=row.report.correction_count,
-            next_focus=row.report.next_focus,
-            summary_text=row.report.summary_text,
-        )
     return TrainingSession(
         session_id=UUID(row.session_id),
         user_id=UUID(row.user_id),
@@ -80,18 +88,17 @@ def _to_model(row: TrainingSessionORM) -> TrainingSession:
             )
             for v in row.voice_commands
         ],
-        report=report,
+        report=_report_to_model(row.report),
     )
 
 
 class SessionRepository:
-    """训练会话的持久化访问。"""
+    """Persistence access for training sessions and their child records."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def create(self, training_session: TrainingSession) -> TrainingSession:
-        """创建一个新的训练会话（通常只含起始信息）。"""
         row = TrainingSessionORM(
             session_id=str(training_session.session_id),
             user_id=str(training_session.user_id),
@@ -106,10 +113,7 @@ class SessionRepository:
         row = self._session.get(TrainingSessionORM, str(session_id))
         return _to_model(row) if row is not None else None
 
-    def add_form_analysis(
-        self, session_id: UUID, analysis: FormAnalysis
-    ) -> FormAnalysis:
-        """向会话追加一条动作分析。"""
+    def add_form_analysis(self, session_id: UUID, analysis: FormAnalysis) -> FormAnalysis:
         row = FormAnalysisORM(
             session_id=str(session_id),
             exercise=analysis.exercise.value,
@@ -125,7 +129,6 @@ class SessionRepository:
         return _form_to_model(row)
 
     def add_set(self, session_id: UUID, record: SetRecord) -> None:
-        """向会话追加一组训练记录。"""
         self._session.add(
             SetRecordORM(
                 session_id=str(session_id),
@@ -137,7 +140,6 @@ class SessionRepository:
         self._session.commit()
 
     def add_voice_command(self, session_id: UUID, event: VoiceCommandEvent) -> None:
-        """向会话追加一次语音命令事件。"""
         self._session.add(
             VoiceCommandEventORM(
                 session_id=str(session_id),
@@ -148,21 +150,26 @@ class SessionRepository:
         self._session.commit()
 
     def set_report(self, session_id: UUID, report: SessionReport) -> SessionReport:
-        """为会话写入/覆盖训练报告。"""
-        existing = self._session.get(SessionReportORM, str(session_id))
-        if existing is None:
-            existing = SessionReportORM(session_id=str(session_id))
-            self._session.add(existing)
-        existing.form_score = report.form_score
-        existing.risk_notes = list(report.risk_notes)
-        existing.correction_count = report.correction_count
-        existing.next_focus = report.next_focus
-        existing.summary_text = report.summary_text
+        row = self._session.get(SessionReportORM, str(session_id))
+        if row is None:
+            row = SessionReportORM(session_id=str(session_id))
+            self._session.add(row)
+        row.form_score = report.form_score
+        row.risk_notes = list(report.risk_notes)
+        row.correction_count = report.correction_count
+        row.next_focus = report.next_focus
+        row.summary_text = report.summary_text
+        row.total_reps = report.total_reps
+        row.duration_seconds = report.duration_seconds
+        row.estimated_calories = report.estimated_calories
+        row.overall_score = report.overall_score
+        row.exercise_breakdown = [
+            item.model_dump(mode="json") for item in report.exercise_breakdown
+        ]
         self._session.commit()
         return report
 
     def mark_ended(self, session_id: UUID, ended_at) -> None:
-        """标记会话结束时间。"""
         row = self._session.get(TrainingSessionORM, str(session_id))
         if row is not None:
             row.ended_at = ended_at
@@ -171,7 +178,6 @@ class SessionRepository:
     def list_by_user(
         self, user_id: UUID, *, limit: int = 20, offset: int = 0
     ) -> list[TrainingSession]:
-        """按时间倒序分页返回某用户的训练历史（需求 7.3）。"""
         stmt = (
             select(TrainingSessionORM)
             .where(TrainingSessionORM.user_id == str(user_id))

@@ -1,8 +1,3 @@
-/**
- * 前端领域类型（精简版）。
- * 动作列表与模型端 src/live_coach.py 的 EXERCISES 对齐（10 个真实动作）。
- */
-
 export type SupportedExercise =
   | "squat"
   | "lunge"
@@ -15,18 +10,13 @@ export type SupportedExercise =
   | "lateral_shoulder_raises"
   | "jumping_jacks";
 
-/** 动作元信息：用于选择页展示与站位提示。 */
 export interface ExerciseMeta {
   value: SupportedExercise;
   label: string;
   emoji: string;
-  /** 主要锻炼部位。 */
   muscle: string;
-  /** 难度 1~3。 */
   level: 1 | 2 | 3;
-  /** 卡片副标题（一句卖点）。 */
   blurb: string;
-  /** 站位提示（训练页用）。 */
   tip: string;
 }
 
@@ -35,82 +25,82 @@ export const EXERCISES: ExerciseMeta[] = [
     value: "squat",
     label: "深蹲",
     emoji: "🏋️",
-    muscle: "腿 · 臀 · 核心",
+    muscle: "腿部 · 臀部 · 核心",
     level: 2,
-    blurb: "下肢力量基石",
-    tip: "让全身进入画面，脚尖与膝盖尽量保持同向。",
+    blurb: "下肢力量基础动作",
+    tip: "让全身进入画面，膝盖方向尽量跟脚尖保持一致。",
   },
   {
     value: "lunge",
-    label: "弓步蹲",
+    label: "弓步",
     emoji: "🦵",
-    muscle: "腿 · 臀 · 平衡",
+    muscle: "腿部 · 臀部 · 平衡",
     level: 2,
-    blurb: "单侧稳定与协调",
+    blurb: "单腿稳定性训练",
     tip: "前后腿都要拍到，给迈步和下蹲留出空间。",
   },
   {
     value: "push_up",
     label: "俯卧撑",
     emoji: "💪",
-    muscle: "胸 · 肩 · 三头",
+    muscle: "胸部 · 肩部 · 肱三头",
     level: 3,
-    blurb: "上肢推力经典",
+    blurb: "经典上肢推力训练",
     tip: "尽量使用侧面机位，肩、髋、踝最好都能看到。",
   },
   {
     value: "dumbbell_shoulder_press",
     label: "哑铃肩推",
-    emoji: "🙆",
-    muscle: "肩 · 三头 · 核心",
+    emoji: "🏋️‍♀️",
+    muscle: "肩部 · 肱三头 · 核心",
     level: 3,
-    blurb: "肩部力量塑形",
+    blurb: "上举推举力量训练",
     tip: "全身站直入镜，头顶上方给手臂伸直留出空间。",
   },
   {
     value: "dumbbell_rows",
     label: "哑铃划船",
     emoji: "🚣",
-    muscle: "背 · 二头 · 后肩",
+    muscle: "背部 · 肱二头 · 后束",
     level: 2,
-    blurb: "厚背训练首选",
-    tip: "躯干和双臂尽量完整入镜，方便识别手肘轨迹。",
+    blurb: "背部发力基础动作",
+    tip: "躯干和双臂尽量完整入镜，方便识别手臂轨迹。",
   },
   {
     value: "bicep_curls",
     label: "二头弯举",
     emoji: "💪",
-    muscle: "肱二头肌",
+    muscle: "肱二头",
     level: 1,
-    blurb: "手臂线条塑造",
+    blurb: "手臂孤立训练",
     tip: "正对镜头站立，手肘和上臂尽量保持清晰可见。",
   },
   {
     value: "situps",
     label: "仰卧起坐",
-    emoji: "🧎",
-    muscle: "腹 · 核心",
+    emoji: "🧘",
+    muscle: "腹部 · 核心",
     level: 1,
     blurb: "核心耐力训练",
     tip: "躯干和髋部保持在画面内，方便识别动作节奏。",
   },
   {
     value: "tricep_extensions",
-    label: "肱三头屈伸",
-    emoji: "💪",
-    muscle: "肱三头肌",
+    label: "三头屈伸",
+    emoji: "🏹",
+    muscle: "肱三头",
     level: 2,
-    blurb: "后臂塑形",
-    tip: "上臂尽量完整入镜，不要把手肘裁出画面。",
+    blurb: "手臂伸展控制训练",
+    tip: "上臂尽量完整入镜，不要把哑铃路径裁出画面。",
   },
   {
     value: "lateral_shoulder_raises",
     label: "侧平举",
-    emoji: "🙆",
+    emoji: "🪽",
     muscle: "三角肌中束",
     level: 1,
-    blurb: "宽肩塑造",
-    tip: "双肩和双手尽量都入镜，方便判断抬手是否水平。",
+    blurb: "肩部稳定和宽度训练",
+    tip: "双肩和双手尽量都入镜，方便判断左右两边是否平衡。",
   },
   {
     value: "jumping_jacks",
@@ -118,14 +108,14 @@ export const EXERCISES: ExerciseMeta[] = [
     emoji: "🤸",
     muscle: "全身 · 有氧",
     level: 1,
-    blurb: "热身燃脂",
+    blurb: "热身和心肺训练",
     tip: "给头到脚留出完整空间，确保起跳和落地都能看到。",
   },
 ];
 
 export const EXERCISE_LABEL: Record<SupportedExercise, string> = EXERCISES.reduce(
-  (acc, e) => {
-    acc[e.value] = e.label;
+  (acc, exercise) => {
+    acc[exercise.value] = exercise.label;
     return acc;
   },
   {} as Record<SupportedExercise, string>

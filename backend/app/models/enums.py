@@ -18,6 +18,14 @@ class TrainingGoal(str, Enum):
     GENERAL_FITNESS = "general_fitness"
 
 
+class Gender(str, Enum):
+    """User profile gender used by deterministic formulas."""
+
+    MALE = "male"
+    FEMALE = "female"
+    UNSET = "unset"
+
+
 class Venue(str, Enum):
     """训练场地（需求 1.3）。"""
 
@@ -31,8 +39,15 @@ class SupportedExercise(str, Enum):
 
     SQUAT = "squat"
     LUNGE = "lunge"
-    OVERHEAD_PRESS = "overhead_press"
     PUSH_UP = "push_up"
+    DUMBBELL_SHOULDER_PRESS = "dumbbell_shoulder_press"
+    OVERHEAD_PRESS = "dumbbell_shoulder_press"
+    DUMBBELL_ROWS = "dumbbell_rows"
+    BICEP_CURLS = "bicep_curls"
+    SITUPS = "situps"
+    TRICEP_EXTENSIONS = "tricep_extensions"
+    LATERAL_SHOULDER_RAISES = "lateral_shoulder_raises"
+    JUMPING_JACKS = "jumping_jacks"
 
 
 class ConfidenceLevel(str, Enum):
@@ -90,3 +105,10 @@ class ConsentType(str, Enum):
     """敏感信息同意类型（需求 9.3）。"""
 
     SENSITIVE_HEALTH = "sensitive_health"
+
+
+class VoiceProviderType(str, Enum):
+    """Voice source type for TTS and clone metadata."""
+
+    SYSTEM = "system"
+    MINIMAX = "minimax"

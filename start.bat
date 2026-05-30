@@ -1,6 +1,6 @@
 @echo off
-REM Lian Le Ma - one-click launcher (double-click to run)
-REM Detect LAN IP -> write app/.env -> start model server + Expo
+REM Lian Le Ma unified launcher
+REM Detect LAN IP -> write app/backend env -> start Flask pose service + FastAPI + Expo
 cd /d "%~dp0"
 powershell -ExecutionPolicy Bypass -File "%~dp0start.ps1"
 pause

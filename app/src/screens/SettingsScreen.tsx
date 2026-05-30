@@ -1,17 +1,19 @@
-/**
- * 通用设置页（我的 → 设置）。Keep 风格浅色，占位常见开关项。
- */
-import { useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useSettings } from "../store/settings";
 import { Card } from "../ui/components";
 import { colors, font, spacing } from "../ui/theme";
 
 export default function SettingsScreen() {
-  const [voiceCue, setVoiceCue] = useState(true);
-  const [haptics, setHaptics] = useState(true);
-  const [keepAwake, setKeepAwake] = useState(true);
+  const {
+    voiceEnabled,
+    setVoiceEnabled,
+    repAnnouncementsEnabled,
+    setRepAnnouncementsEnabled,
+    encouragementEnabled,
+    setEncouragementEnabled,
+  } = useSettings();
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -19,20 +21,38 @@ export default function SettingsScreen() {
         <Text style={styles.title}>通用设置</Text>
 
         <Card style={styles.group}>
-          <ToggleRow label="语音播报" value={voiceCue} onChange={setVoiceCue} />
+          <ToggleRow label="语音播报" value={voiceEnabled} onChange={setVoiceEnabled} />
           <View style={styles.divider} />
-          <ToggleRow label="触觉反馈" value={haptics} onChange={setHaptics} />
+          <ToggleRow
+            label="次数播报"
+            value={repAnnouncementsEnabled}
+            onChange={setRepAnnouncementsEnabled}
+          />
           <View style={styles.divider} />
-          <ToggleRow label="训练时屏幕常亮" value={keepAwake} onChange={setKeepAwake} />
+          <ToggleRow
+            label="鼓励打气"
+            value={encouragementEnabled}
+            onChange={setEncouragementEnabled}
+          />
         </Card>
 
-        <Text style={styles.note}>设置仅本地生效，重启后恢复默认（持久化后续接入）。</Text>
+        <Text style={styles.note}>
+          开启后，训练中会进行次数播报、姿态纠错和阶段性鼓励提示。
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -49,10 +69,28 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing(5), paddingBottom: spacing(8) },
-  title: { fontSize: font.h1, fontWeight: "900", color: colors.text, marginTop: spacing(2), marginBottom: spacing(6) },
+  title: {
+    fontSize: font.h1,
+    fontWeight: "900",
+    color: colors.text,
+    marginTop: spacing(2),
+    marginBottom: spacing(6),
+  },
   group: { padding: 0, overflow: "hidden" },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing(3.5), paddingHorizontal: spacing(4) },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing(3.5),
+    paddingHorizontal: spacing(4),
+  },
   rowLabel: { fontSize: font.h3, fontWeight: "600", color: colors.text },
   divider: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: spacing(4) },
-  note: { marginTop: spacing(6), color: colors.textFaint, fontSize: font.tiny, textAlign: "center" },
+  note: {
+    marginTop: spacing(6),
+    color: colors.textFaint,
+    fontSize: font.small,
+    textAlign: "center",
+    lineHeight: 20,
+  },
 });

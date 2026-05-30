@@ -57,6 +57,9 @@ In scope for this iteration:
 - generate a conservative "do not exceed" maximum attempt recommendation
 - add system voice playback, Minimax voice playback, and cloned-voice support
 - add intermittent encouragement during training with cooldown rules
+- add stable rep counting for all 10 in-app exercises
+- add spoken rep announcements during training
+- generate a post-session workout summary with estimated calories burned, overall score, and completion summary
 - persist user profile, voice preference, training sessions, generated plans, and voice-clone metadata
 
 Out of scope for this iteration:
@@ -78,6 +81,8 @@ The product is split into four bounded feature areas:
    - live camera frames
    - pose analysis
    - correction cues
+   - rep counting for all supported exercises
+   - spoken rep announcements
    - encouragement timing
    - session persistence
    - end-of-session reporting
@@ -191,6 +196,7 @@ FastAPI becomes the app-facing surface. All routes live under `/api`.
     - client frame timestamp
   - response:
     - rep count
+    - rep delta or rep-announcement signal when a new rep is completed
     - phase
     - status color
     - correction cue
@@ -216,6 +222,10 @@ FastAPI becomes the app-facing surface. All routes live under `/api`.
     - session id
   - response:
     - report summary
+    - estimated calories burned
+    - total reps
+    - exercise completion breakdown
+    - overall workout score
     - form score
     - correction count
     - next-focus text
@@ -294,6 +304,13 @@ Add new or expanded data shapes for:
   - display name
   - cloned flag
   - owner user id
+- `WorkoutSummary`
+  - total reps
+  - duration seconds
+  - estimated calories burned
+  - overall score
+  - exercise breakdown
+  - dominant correction themes
 
 ### Exercise alignment
 
@@ -309,6 +326,8 @@ Backend `SupportedExercise` must be expanded from the old 4-action scope to matc
 - tricep_extensions
 - lateral_shoulder_raises
 - jumping_jacks
+
+The live coaching layer must provide rep counting for each of the 10 app-facing actions. At the start of this iteration, generic movements such as `situps`, `tricep_extensions`, `lateral_shoulder_raises`, and `jumping_jacks` do not yet have stable counting behavior and must gain deterministic counting heuristics.
 
 The backend does not need equally rich deterministic load guidance for every movement on day one. When a user provides no relevant load sample, the API should return qualitative guidance instead of fabricated weight numbers.
 
@@ -331,6 +350,31 @@ Extend the generator to optionally use body metrics and recent load samples for:
 - difficulty calibration
 - lower or higher default volume
 - exercise substitution notes
+
+### Rep counting
+
+Rep counting remains deterministic and heuristic-based inside the pose coaching layer.
+
+Requirements:
+
+- all 10 supported app exercises must expose a stable `phase` and `rep_count`
+- a completed repetition must only be counted once per full movement cycle
+- noisy oscillation near thresholds must not create duplicate counts
+- each exercise may use its own metric and thresholds, but the backend and frontend contract must stay uniform
+- the backend must know when a new rep was completed so it can trigger rep-announcement speech
+
+The target set includes:
+
+- squat
+- lunge
+- push_up
+- dumbbell_shoulder_press
+- dumbbell_rows
+- bicep_curls
+- situps
+- tricep_extensions
+- lateral_shoulder_raises
+- jumping_jacks
 
 ### Meal guidance
 
@@ -405,8 +449,11 @@ Two playback classes:
 
 - correction playback
 - encouragement playback
+- rep-count playback
 
 The frontend should not invent encouragement timing by itself. It only obeys backend playback instructions and renders state.
+
+For rep-count playback, a new repetition may trigger short speech such as `1 次`, `第 5 次`, or a combined cue like `第 8 次，节奏很好`, subject to cooldown and anti-spam rules.
 
 ## Encouragement Policy
 
@@ -418,11 +465,13 @@ Trigger candidates:
 - the user completes a meaningful rep milestone
 - the user maintains a standard form streak
 - a long silent interval passes during an active set
+- a new repetition completes and rep-announcement speech is due
 
 Cooldown rules:
 
 - enforce a minimum time gap between spoken events
 - never stack an encouragement immediately after a correction cue
+- never stack a rep announcement and a correction cue in the same instant; correction wins
 - suppress duplicate cue text
 - prefer silence over spam when confidence is low
 
@@ -480,6 +529,7 @@ Persist and query at least the following:
 - maximum-attempt guidance snapshot tied to the plan request
 - training sessions
 - per-session analysis summary
+- post-session workout summary metrics
 - voice command events
 - voice profile metadata
 
@@ -522,6 +572,9 @@ The initial implementation can store small audio references and provider ids wit
   - training plan generation
   - meal guidance generation
   - maximum-attempt guidance rules
+  - rep counting for all 10 supported exercises
+  - calorie estimation rules
+  - workout score and summary aggregation
   - encouragement timing policy
   - voice-provider fallback behavior
 - API tests for:
@@ -545,6 +598,8 @@ The initial implementation can store small audio references and provider ids wit
 - app can generate a plan and meal guidance from realistic inputs
 - app can start a training session through backend instead of direct model access
 - app can receive at least one correction cue and one encouragement cue
+- app can announce completed reps during training
+- app can end a session and receive calories, score, and workout summary output
 - app can select a cloned voice when available and gracefully fall back when not
 
 ## Delivery Order
@@ -556,6 +611,7 @@ Implement in three phases, but within one unified architecture:
 - add FastAPI routes
 - move live training traffic behind backend
 - align exercise enums
+- make all 10 app actions countable through the backend training flow
 - persist profile and session basics
 
 ### Phase B: Customization
@@ -568,6 +624,13 @@ Implement in three phases, but within one unified architecture:
 
 - add standard voice playback via backend
 - add encouragement timing logic
+- add spoken rep announcements
 - add Minimax cloned voice flow
+
+### Phase D: Post-session summary
+
+- estimate calories burned conservatively from weight, duration, exercise mix, and repetition intensity
+- compute overall workout score from form quality, completion, and consistency
+- expose summary fields to the app report UI
 
 This preserves the recommended order from the design discussion while keeping all work on the same long-term architecture.

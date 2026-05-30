@@ -23,6 +23,10 @@ SPECIALIZED_EXERCISES = {
     "dumbbell_shoulder_press",
     "dumbbell_rows",
     "bicep_curls",
+    "situps",
+    "tricep_extensions",
+    "lateral_shoulder_raises",
+    "jumping_jacks",
 }
 
 GENERIC_EXERCISES = {
@@ -125,6 +129,7 @@ class LiveCoachSession:
     rep_count: int = 0
     last_metric: float | None = None
     seen_bottom: bool = False
+    last_encouragement_rep: int = 0
     error_streaks: dict[str, int] = field(default_factory=dict)
     last_spoken_at: dict[str, float] = field(default_factory=dict)
     error_totals: Counter = field(default_factory=Counter)
@@ -193,8 +198,8 @@ class LiveCoachEngine:
 
         phase, metric = self._phase_for(canonical, keypoints, session)
         errors = self._errors_for(canonical, keypoints, phase)
-        self._update_rep_count(session, canonical, phase)
-        speak_text = self._resolve_speech(errors, session, now)
+        rep_completed = self._update_rep_count(session, canonical, phase)
+        speak_text = self._resolve_speech(errors, session, now, rep_completed)
         status_color = _status_from_errors(errors)
         primary_cue = errors[0]["cue"] if errors else CUE_LIBRARY["good_rep"]
         secondary_cue = errors[1]["cue"] if len(errors) > 1 else ""
@@ -254,7 +259,7 @@ class LiveCoachEngine:
             if metric < 18.0:
                 return "ready", metric
             if metric > 95.0 and lockout_angle > 160.0:
-                return "ready", metric
+                return "top", metric
             if session.last_metric is None or metric >= session.last_metric:
                 return "rising", metric
             return "lowering", metric
@@ -280,7 +285,47 @@ class LiveCoachEngine:
                 return moving_up, metric
             return "lowering", metric
 
-        if exercise in {"situps", "tricep_extensions", "lateral_shoulder_raises", "jumping_jacks", "other"}:
+        if exercise == "situps":
+            metric = _situp_metric(keypoints)
+            if metric > 70.0:
+                return "top", metric
+            if metric < 20.0:
+                return "ready", metric
+            if session.last_metric is None or metric >= session.last_metric:
+                return "rising", metric
+            return "lowering", metric
+
+        if exercise == "tricep_extensions":
+            metric = _tricep_extension_metric(keypoints)
+            if metric > 55.0:
+                return "bottom", metric
+            if metric < 18.0:
+                return "ready", metric
+            if session.last_metric is None or metric >= session.last_metric:
+                return "lowering", metric
+            return "rising", metric
+
+        if exercise == "lateral_shoulder_raises":
+            metric = _lateral_raise_metric(keypoints)
+            if metric > 40.0:
+                return "top", metric
+            if metric < 10.0:
+                return "ready", metric
+            if session.last_metric is None or metric >= session.last_metric:
+                return "rising", metric
+            return "lowering", metric
+
+        if exercise == "jumping_jacks":
+            metric = _jumping_jack_metric(keypoints)
+            if metric > 110.0:
+                return "top", metric
+            if metric < 30.0:
+                return "ready", metric
+            if session.last_metric is None or metric >= session.last_metric:
+                return "opening", metric
+            return "closing", metric
+
+        if exercise == "other":
             return "ready", 0.0
 
         knee_angle = _primary_knee_angle(exercise, keypoints)
@@ -419,28 +464,33 @@ class LiveCoachEngine:
         return _sorted_errors(errors)
 
     def _generic_errors(self, exercise: str) -> list[dict]:
+        if exercise in GENERIC_EXERCISES and exercise != "other":
+            return []
         code = f"generic_{exercise}" if exercise != "other" else "generic_other"
         return [_error(code, 0.24)]
 
-    def _update_rep_count(self, session: LiveCoachSession, exercise: str, phase: str) -> None:
+    def _update_rep_count(self, session: LiveCoachSession, exercise: str, phase: str) -> bool:
         if exercise not in SPECIALIZED_EXERCISES:
             session.seen_bottom = False
-            return
+            return False
 
         bottom_phases = {"bottom", "top"}
         if phase in bottom_phases:
             session.seen_bottom = True
-            return
+            return False
 
         if phase == "ready" and session.seen_bottom:
             session.rep_count += 1
             session.seen_bottom = False
+            return True
+        return False
 
     def _resolve_speech(
         self,
         errors: list[dict],
         session: LiveCoachSession,
         now: float,
+        rep_completed: bool,
     ) -> str:
         seen_codes = {error["code"] for error in errors}
         for code in list(session.error_streaks):
@@ -453,6 +503,26 @@ class LiveCoachEngine:
             session.error_totals[code] += 1
 
         if not errors:
+            if rep_completed:
+                if (
+                    session.rep_count % 5 == 0
+                    and session.rep_count != session.last_encouragement_rep
+                ):
+                    session.last_encouragement_rep = session.rep_count
+                    cue = f"第{session.rep_count}次，节奏很稳，继续保持。"
+                else:
+                    cue = f"第{session.rep_count}次"
+                session.recent_cues.append(cue)
+                session.recent_cues = session.recent_cues[-5:]
+                return cue
+            return ""
+
+        if not errors:
+            if rep_completed:
+                cue = f"第{session.rep_count}次"
+                session.recent_cues.append(cue)
+                session.recent_cues = session.recent_cues[-5:]
+                return cue
             return ""
 
         primary = errors[0]
@@ -547,3 +617,27 @@ def _arm_flexion_metric(keypoints: np.ndarray) -> float:
         _joint_angle(keypoints[6], keypoints[8], keypoints[10]),
     )
     return 180.0 - elbow_angle
+
+
+def _situp_metric(keypoints: np.ndarray) -> float:
+    shoulder_y = _midpoint(keypoints[5], keypoints[6])[1]
+    hip_y = _midpoint(keypoints[11], keypoints[12])[1]
+    return float(hip_y - shoulder_y)
+
+
+def _tricep_extension_metric(keypoints: np.ndarray) -> float:
+    return _arm_flexion_metric(keypoints)
+
+
+def _lateral_raise_metric(keypoints: np.ndarray) -> float:
+    shoulder_y = _midpoint(keypoints[5], keypoints[6])[1]
+    wrist_y = _midpoint(keypoints[9], keypoints[10])[1]
+    return float(shoulder_y - wrist_y)
+
+
+def _jumping_jack_metric(keypoints: np.ndarray) -> float:
+    shoulder_span = max(_span_x(keypoints[5], keypoints[6]), 1.0)
+    ankle_span = _span_x(keypoints[15], keypoints[16])
+    arm_height = max(0.0, _midpoint(keypoints[5], keypoints[6])[1] - _midpoint(keypoints[9], keypoints[10])[1])
+    leg_open = (ankle_span / shoulder_span) * 40.0
+    return float(arm_height + leg_open)

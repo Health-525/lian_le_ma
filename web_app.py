@@ -215,35 +215,79 @@ def _ensure_browser_compatible_video(filename):
     return compat_path
 
 
+def _candidate_torch_devices():
+    force_cpu = os.getenv("POSE_FORCE_CPU", "0") == "1"
+    if force_cpu:
+        return [torch.device("cpu")]
+
+    devices = []
+    if torch.cuda.is_available():
+        devices.append(torch.device("cuda"))
+    devices.append(torch.device("cpu"))
+    return devices
+
+
 def load_global_model():
     global model, device, fitness_action_recognizer
     if model is None:
         model_path = r"model/best_model_7_exchange_val_and_test.pth"
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"使用 {device} 加载模型")
-
-        # 当前仓库里的这份权重实际是 15 分类。
-        model = ST_GCN(num_classes=15, in_channels=2, t_kernel_size=9, hop_size=1)
-        print(f"准备加载模型权重: {model_path}")
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print("加载模型权重成功")
-        model.to(device)
-        model.eval()
+        last_error = None
+        for candidate_device in _candidate_torch_devices():
+            try:
+                print(f"使用 {candidate_device} 加载模型")
+                posture_model = ST_GCN(
+                    num_classes=15,
+                    in_channels=2,
+                    t_kernel_size=9,
+                    hop_size=1,
+                )
+                print(f"准备加载模型权重: {model_path}")
+                posture_model.load_state_dict(
+                    torch.load(model_path, map_location=candidate_device)
+                )
+                print("加载模型权重成功")
+                posture_model.to(candidate_device)
+                posture_model.eval()
+                model = posture_model
+                device = candidate_device
+                break
+            except Exception as exc:
+                last_error = exc
+                model = None
+                print(f"使用 {candidate_device} 加载模型失败: {exc}")
+        if model is None:
+            raise last_error
 
     if fitness_action_recognizer is None:
         checkpoint_path = os.getenv(
             "FITNESS_RECOGNIZER_PATH",
             os.path.join("model", "mmfit_pose11cls_stride48_best.pth"),
         )
-        fitness_action_recognizer = load_fitness_action_recognizer(
-            checkpoint_path,
-            device=device,
-            window_size=48,
-            min_confidence=0.35,
-            num_classes=len(FITNESS_LABELS),
-        )
+        recognizer = None
+        last_error = None
+        recognizer_devices = [device]
+        if device.type != "cpu":
+            recognizer_devices.append(torch.device("cpu"))
+
+        for candidate_device in recognizer_devices:
+            try:
+                recognizer = load_fitness_action_recognizer(
+                    checkpoint_path,
+                    device=candidate_device,
+                    window_size=48,
+                    min_confidence=0.35,
+                    num_classes=len(FITNESS_LABELS),
+                )
+                if recognizer is not None:
+                    break
+            except Exception as exc:
+                last_error = exc
+                print(f"使用 {candidate_device} 加载 MM-Fit 识别器失败: {exc}")
+        fitness_action_recognizer = recognizer
         if fitness_action_recognizer is None:
             print(f"未找到 MM-Fit 健身识别权重: {checkpoint_path}")
+            if last_error is not None:
+                print(f"MM-Fit 识别器最终回退为空，最后一次错误: {last_error}")
         else:
             print(f"已加载 MM-Fit 健身识别权重: {checkpoint_path}")
 
@@ -597,4 +641,6 @@ def chat():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4000, debug=True)
+    port = int(os.getenv("PORT", os.getenv("POSE_APP_PORT", "4000")))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host='0.0.0.0', port=port, debug=debug, use_reloader=False)

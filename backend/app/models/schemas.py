@@ -1,12 +1,4 @@
-"""领域数据模型（Pydantic v2，任务 3.1）。
-
-对应 design.md "Data Models" 一节。字段范围约束（``weekly_frequency 1~7``、
-``difficulty 1~5``、``form_score 0~100`` 等）在此以 Pydantic 校验落地，构成
-需求 1.1 / 1.3 / 2.3 / 7.1 / 7.2 的后端侧校验（前端 Zod 为对侧校验）。
-
-这些模型是 API 与服务层之间传递的"领域对象"；持久化由 ``models.orm`` 的
-SQLAlchemy 表负责，两者通过仓储层（任务 3.2）相互转换。
-"""
+"""Pydantic domain models shared by routes, services, and repositories."""
 
 from __future__ import annotations
 
@@ -21,29 +13,40 @@ from app.models.enums import (
     ConsentType,
     Entitlement,
     FormStatus,
+    Gender,
     InjuryRiskArea,
     PermissionScope,
     SupportedExercise,
     TrainingGoal,
     Venue,
+    VoiceProviderType,
     VoiceCommand,
 )
 
-# ---- 字段范围常量（单一事实来源，供模型与测试共用）----
 HEIGHT_CM_MIN, HEIGHT_CM_MAX = 100, 230
 WEIGHT_KG_MIN, WEIGHT_KG_MAX = 30, 250
 AGE_MIN, AGE_MAX = 12, 90
 WEEKLY_FREQUENCY_MIN, WEEKLY_FREQUENCY_MAX = 1, 7
 DIFFICULTY_MIN, DIFFICULTY_MAX = 1, 5
 FORM_SCORE_MIN, FORM_SCORE_MAX = 0, 100
+OVERALL_SCORE_MIN, OVERALL_SCORE_MAX = 0, 100
 PLAN_DAYS = 7
 
 
-# --------------------------------------------------------------------------
-# 评估与计划
-# --------------------------------------------------------------------------
+class UserProfile(BaseModel):
+    """Persisted user profile used by customization and workout summary."""
+
+    user_id: UUID = Field(default_factory=uuid4)
+    name: str = Field(default="Lian Le Ma User", min_length=1)
+    gender: Gender = Gender.UNSET
+    age: Optional[int] = Field(default=None, ge=AGE_MIN, le=AGE_MAX)
+    height_cm: Optional[int] = Field(default=None, ge=HEIGHT_CM_MIN, le=HEIGHT_CM_MAX)
+    weight_kg: Optional[float] = Field(default=None, ge=WEIGHT_KG_MIN, le=WEIGHT_KG_MAX)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Assessment(BaseModel):
-    """新用户运动评估（需求 1）。"""
+    """User customization and workout planning input."""
 
     user_id: UUID = Field(default_factory=uuid4)
     goal: TrainingGoal
@@ -52,13 +55,21 @@ class Assessment(BaseModel):
     weekly_frequency: int = Field(
         ..., ge=WEEKLY_FREQUENCY_MIN, le=WEEKLY_FREQUENCY_MAX
     )
-    # 敏感健康信息：仅在取得 Sensitive_Consent 后才应非空（需求 1.4 / 9.3）。
     injury_risk: list[InjuryRiskArea] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class RecentLoadSample(BaseModel):
+    """Recent lift sample used for conservative load guidance."""
+
+    exercise: SupportedExercise
+    weight_kg: float = Field(..., ge=0)
+    reps_completed: int = Field(..., ge=1, le=30)
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class PlanExercise(BaseModel):
-    """计划中的单个动作（需求 2.3）。"""
+    """One exercise entry inside the 7-day training plan."""
 
     name: str
     exercise: Optional[SupportedExercise] = None
@@ -70,7 +81,7 @@ class PlanExercise(BaseModel):
 
 
 class PlanDay(BaseModel):
-    """计划中的某一天（需求 2.1 / 2.2）。"""
+    """One day inside the 7-day training plan."""
 
     day_index: int = Field(..., ge=1, le=PLAN_DAYS)
     is_rest_day: bool = False
@@ -78,25 +89,64 @@ class PlanDay(BaseModel):
 
 
 class TrainingPlan(BaseModel):
-    """7 天训练计划（需求 2）。"""
+    """Seven-day training plan."""
 
     user_id: UUID
     days: list[PlanDay] = Field(..., min_length=PLAN_DAYS, max_length=PLAN_DAYS)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# --------------------------------------------------------------------------
-# 动作分析与训练会话
-# --------------------------------------------------------------------------
+class MealPlanDay(BaseModel):
+    """One day of meal guidance."""
+
+    day_index: int = Field(..., ge=1, le=PLAN_DAYS)
+    calorie_target: int = Field(..., ge=1000, le=6000)
+    protein_g: int = Field(..., ge=0, le=500)
+    carbs_g: int = Field(..., ge=0, le=800)
+    fat_g: int = Field(..., ge=0, le=300)
+    meal_suggestions: list[str] = Field(default_factory=list)
+
+
+class MealPlan(BaseModel):
+    """Seven-day meal guidance."""
+
+    user_id: UUID
+    days: list[MealPlanDay] = Field(..., min_length=PLAN_DAYS, max_length=PLAN_DAYS)
+    hydration_note: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AttemptGuidance(BaseModel):
+    """Conservative upper-bound training guidance."""
+
+    exercise: SupportedExercise
+    estimated_training_max_kg: Optional[float] = Field(default=None, ge=0)
+    do_not_exceed_kg: Optional[float] = Field(default=None, ge=0)
+    confidence_label: ConfidenceLevel = ConfidenceLevel.LOW
+    explanation_note: str
+
+
+class CustomPlanBundle(BaseModel):
+    """Response bundle for the customization tab."""
+
+    profile: UserProfile
+    assessment: Assessment
+    training_plan: TrainingPlan
+    meal_plan: MealPlan
+    attempt_guidance: list[AttemptGuidance] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ProblemArea(BaseModel):
-    """动作问题部位（需求 4.3）。"""
+    """Detected posture problem area."""
 
     area: str
     severity: ConfidenceLevel = ConfidenceLevel.MEDIUM
 
 
 class FormAnalysis(BaseModel):
-    """单次动作标准度分析结果（需求 3.1 / 4）。"""
+    """One frame-analysis result persisted for a training session."""
 
     session_id: UUID
     exercise: SupportedExercise
@@ -109,7 +159,7 @@ class FormAnalysis(BaseModel):
 
 
 class VoiceCommandEvent(BaseModel):
-    """一次语音命令事件（需求 5）。"""
+    """One recognized voice command event during training."""
 
     session_id: UUID
     command: VoiceCommand
@@ -117,15 +167,23 @@ class VoiceCommandEvent(BaseModel):
 
 
 class SetRecord(BaseModel):
-    """一组训练记录（需求 7 / 10）。"""
+    """One set or motion-total record inside a session."""
 
     exercise: Optional[SupportedExercise] = None
     reps: Optional[int] = Field(default=None, ge=0)
     difficulty: int = Field(..., ge=DIFFICULTY_MIN, le=DIFFICULTY_MAX)
 
 
+class ExerciseBreakdown(BaseModel):
+    """Per-exercise summary inside the workout report."""
+
+    exercise: SupportedExercise
+    reps: int = Field(..., ge=0)
+    estimated_calories: float = Field(..., ge=0)
+
+
 class SessionReport(BaseModel):
-    """训练后报告（需求 7）。"""
+    """Post-workout report."""
 
     session_id: UUID
     form_score: int = Field(..., ge=FORM_SCORE_MIN, le=FORM_SCORE_MAX)
@@ -133,10 +191,17 @@ class SessionReport(BaseModel):
     correction_count: int = Field(..., ge=0)
     next_focus: str
     summary_text: Optional[str] = None
+    total_reps: int = Field(default=0, ge=0)
+    duration_seconds: float = Field(default=0, ge=0)
+    estimated_calories: float = Field(default=0, ge=0)
+    overall_score: int = Field(
+        default=0, ge=OVERALL_SCORE_MIN, le=OVERALL_SCORE_MAX
+    )
+    exercise_breakdown: list[ExerciseBreakdown] = Field(default_factory=list)
 
 
 class TrainingSession(BaseModel):
-    """训练会话（需求 7 / 10）。"""
+    """Persisted training session."""
 
     session_id: UUID = Field(default_factory=uuid4)
     user_id: UUID
@@ -148,11 +213,8 @@ class TrainingSession(BaseModel):
     report: Optional[SessionReport] = None
 
 
-# --------------------------------------------------------------------------
-# 隐私授权与会员权益
-# --------------------------------------------------------------------------
 class PermissionRecord(BaseModel):
-    """设备权限授予记录（需求 9.4）。"""
+    """Persisted device permission record."""
 
     user_id: UUID
     scope: PermissionScope
@@ -161,7 +223,7 @@ class PermissionRecord(BaseModel):
 
 
 class ConsentRecord(BaseModel):
-    """敏感信息同意记录（需求 9.3 / 9.4）。"""
+    """Persisted sensitive-data consent record."""
 
     user_id: UUID
     consent_type: ConsentType = ConsentType.SENSITIVE_HEALTH
@@ -170,9 +232,22 @@ class ConsentRecord(BaseModel):
 
 
 class UserEntitlement(BaseModel):
-    """用户会员权益与免费额度（需求 8）。"""
+    """Subscription and usage-quota metadata."""
 
     user_id: UUID
     entitlement: Entitlement = Entitlement.FREE
     free_quota_used: int = Field(default=0, ge=0)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VoiceProfile(BaseModel):
+    """Voice metadata available to the user."""
+
+    voice_id: str
+    user_id: Optional[UUID] = None
+    provider: VoiceProviderType = VoiceProviderType.SYSTEM
+    provider_voice_id: Optional[str] = None
+    display_name: str
+    cloned: bool = False
+    sample_filename: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
