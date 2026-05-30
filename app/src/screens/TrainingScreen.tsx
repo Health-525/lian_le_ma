@@ -103,7 +103,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
     }
   }, [exercise, permission?.granted]);
 
-  const startLoop = useCallback(() => {
+  const startLoop = useCallback(async () => {
     if (runningRef.current) return;
     runningRef.current = true;
     setRunning(true);
@@ -114,8 +114,10 @@ export default function TrainingScreen({ navigation, route }: Props) {
       standardRepsRef.current = 0;
       correctionCountRef.current = 0;
     }
-    // 播放开场引导语音（深蹲有专属引导，其他动作静默）
-    void playIntro(exercise);
+    // 先播完开场引导，再开始抓帧计数（深蹲有专属引导，其他动作立即开始）
+    await playIntro(exercise);
+    // intro 播完后才启动抓帧
+    if (!runningRef.current) return; // 用户可能在 intro 期间点了返回
     sendFrame();
     timerRef.current = setInterval(sendFrame, FRAME_INTERVAL_MS);
   }, [sendFrame, exercise]);
@@ -131,7 +133,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
-    if (permission?.granted && !runningRef.current) startLoop();
+    if (permission?.granted && !runningRef.current) void startLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission?.granted]);
   useEffect(() => () => { stopLoop(); void stopCoachAudio(); void stopFormSession(); }, [stopLoop]);
@@ -158,7 +160,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const togglePause = () => {
     lightHaptic();
     if (runningRef.current) { stopLoop(); setStatusMsg("已暂停 · 点击继续"); }
-    else startLoop();
+    else void startLoop();
   };
 
   const cameraReady = permission?.granted === true;

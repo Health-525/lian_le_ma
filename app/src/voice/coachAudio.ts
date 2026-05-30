@@ -215,21 +215,24 @@ function repFileKey(rep: number): string | null {
 
 // ── 公开 API ──────────────────────────────────────────────────────────────
 
-/** 播放开场引导（进入训练页时调用）。 */
-export async function playIntro(exercise: SupportedExercise): Promise<void> {
+/** 播放开场引导（进入训练页时调用）。返回 Promise，在 intro 播完后 resolve。 */
+export function playIntro(exercise: SupportedExercise): Promise<void> {
   resetCoachState();
   const key = `intro_${exercise}`;
-  if (!AUDIO_FILES[key]) return;
+  if (!AUDIO_FILES[key]) return Promise.resolve();
 
   introPlaying = true;
-  await _play(key);
-  // 轮询检测 intro 是否播完（精度 200ms）
-  const timer = setInterval(() => {
-    if (!isPlaying) {
-      introPlaying = false;
-      clearInterval(timer);
-    }
-  }, 200);
+  return new Promise<void>((resolve) => {
+    void _play(key);
+    // 每 200ms 检测一次 intro 是否播完，播完后 resolve 并解除屏蔽
+    const timer = setInterval(() => {
+      if (!isPlaying) {
+        introPlaying = false;
+        clearInterval(timer);
+        resolve();
+      }
+    }, 200);
+  });
 }
 
 /**
