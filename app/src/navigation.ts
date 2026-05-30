@@ -25,8 +25,9 @@ export type ProfileStackParamList = {
   Voice: undefined;
 };
 
-/** 底部 tab：运动 / 我的。 */
+/** 底部 tab：运动 / 个性化 / 我的。 */
 export type RootTabParamList = {
   Workout: undefined;
+  Customization: undefined;
   Profile: undefined;
 };

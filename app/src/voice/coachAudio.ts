@@ -130,6 +130,8 @@ let lastPlayedAt = 0;
 let pendingKey: string | null = null;
 let pendingPrio = 0;
 let currentSound: Audio.Sound | null = null;
+/** intro 播放期间屏蔽计数，教程讲完才开始计数。 */
+let introPlaying = false;
 
 // ── 训练状态 ──────────────────────────────────────────────────────────────
 let lastAnnouncedRep = 0;
@@ -152,6 +154,7 @@ export function resetCoachState(): void {
   good_form_idx = 0;
   pendingKey = null;
   pendingPrio = 0;
+  introPlaying = false;
 }
 
 // ── 核心播放引擎 ──────────────────────────────────────────────────────────
@@ -240,8 +243,17 @@ export async function playIntro(exercise: SupportedExercise): Promise<void> {
   resetCoachState();
   const key = `intro_${exercise}`;
   if (AUDIO_FILES[key] !== undefined) {
-    // 开场语音直接播，不走队列（此时没有其他语音）
+    introPlaying = true;   // 屏蔽计数，直到 intro 播完
     await _play(key);
+    // _play 是异步的，但 intro 播完由 onPlaybackStatusUpdate 回调处理
+    // 我们在回调里清除 introPlaying 标志
+    // 这里注册一个一次性监听：intro 播完后解除屏蔽
+    const checkDone = setInterval(() => {
+      if (!isPlaying) {
+        introPlaying = false;
+        clearInterval(checkDone);
+      }
+    }, 200);
   }
 }
 
@@ -261,6 +273,12 @@ export function playSquatFeedback(
   isStandard: boolean,
   speakText?: string
 ): void {
+  // intro 还在播放时，屏蔽计数和鼓励，只允许纠错话术
+  if (introPlaying) {
+    if (!isStandard && speakText) playCoachAudio(speakText);
+    return;
+  }
+
   // 1. 计数播报（优先级 PRIO_COUNT）
   if (rep > lastAnnouncedRep && shouldAnnounceRep(rep)) {
     lastAnnouncedRep = rep;
@@ -322,6 +340,7 @@ export async function stopCoachAudio(): Promise<void> {
   pendingKey = null;
   pendingPrio = 0;
   isPlaying = false;
+  introPlaying = false;
   if (currentSound) {
     await currentSound.stopAsync().catch(() => {});
     await currentSound.unloadAsync().catch(() => {});

@@ -29,13 +29,10 @@ export default function PickScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* 顶部品牌 */}
+        {/* 顶部品牌：居中大 logo */}
         <View style={styles.header}>
           <Image source={LOGO} style={styles.logo} resizeMode="contain" />
           <Text style={styles.subtitle}>AI 实时姿势矫正</Text>
-          <Pressable style={styles.customBtn} onPress={() => navigation.navigate("Customization")}>
-            <Text style={styles.customBtnText}>✨ 个性化推荐</Text>
-          </Pressable>
         </View>
 
         {/* 动作选择 */}

@@ -35,7 +35,6 @@ function WorkoutNavigator() {
   return (
     <WorkoutStack.Navigator screenOptions={{ headerShown: false }}>
       <WorkoutStack.Screen name="Pick" component={PickScreen} />
-      <WorkoutStack.Screen name="Customization" component={CustomizationScreen} />
       <WorkoutStack.Screen name="Training" component={TrainingScreen} />
       <WorkoutStack.Screen name="WorkoutReport" component={WorkoutReportScreen} />
     </WorkoutStack.Navigator>
@@ -65,7 +64,7 @@ function ProfileNavigator() {
 /** 训练页为全屏摄像头，隐藏底部 tab 栏避免遮挡。 */
 function workoutTabBarStyle(route: RouteProp<RootTabParamList, "Workout">) {
   const name = getFocusedRouteNameFromRoute(route) ?? "Pick";
-  if (name === "Training" || name === "WorkoutReport" || name === "Customization") {
+  if (name === "Training" || name === "WorkoutReport") {
     return { display: "none" as const };
   }
   return undefined;
@@ -116,6 +115,11 @@ export default function App() {
                   title: "运动",
                   tabBarStyle: [styles.tabBar, workoutTabBarStyle(route)],
                 })}
+              />
+              <Tab.Screen
+                name="Customization"
+                component={CustomizationScreen}
+                options={{ title: "个性化" }}
               />
               <Tab.Screen
                 name="Profile"
