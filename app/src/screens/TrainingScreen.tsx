@@ -20,6 +20,14 @@ import {
   type FormAnalysisResult,
 } from "../analysis";
 import type { WorkoutStackParamList } from "../navigation";
+import {
+  getNextPhaseAfterPrimaryPress,
+  getPrimaryControlLabel,
+  isPrimaryControlDisabled,
+  runCountdownSequence,
+  type CountdownStep,
+  type TrainingUiPhase,
+} from "./trainingCountdown";
 import { useSettings } from "../store/settings";
 import { EXERCISE_LABEL } from "../types";
 import { heavyHaptic, lightHaptic } from "../ui/haptics";
@@ -56,10 +64,10 @@ function normalizeErrorMessage(error: unknown): string {
     return "无法连接后端，请确认手机和电脑在同一 Wi-Fi。";
   }
   if (message.includes("Internal Server Error")) {
-    return "服务端处理失败，我已经把服务修复到可运行状态，请重新进入训练页。";
+    return "服务端处理失败，请重新进入训练页再试。";
   }
   if (message.includes("Missing EXPO_PUBLIC_API_BASE_URL")) {
-    return "应用未拿到后端地址，请重新扫码进入最新调试包。";
+    return "应用没有拿到后端地址，请重新扫码进入最新调试包。";
   }
 
   return message;
@@ -77,7 +85,8 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>("front");
   const [cameraInitialized, setCameraInitialized] = useState(false);
-  const [running, setRunning] = useState(false);
+  const [trainingPhase, setTrainingPhase] = useState<TrainingUiPhase>("initializing");
+  const [countdownStep, setCountdownStep] = useState<CountdownStep | null>(null);
   const [last, setLast] = useState<FormAnalysisResult | null>(null);
   const [reps, setReps] = useState(0);
   const [statusMsg, setStatusMsg] = useState("正在准备摄像头...");
@@ -89,8 +98,15 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const runningRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
+  const countdownOpacity = useRef(new Animated.Value(0)).current;
+  const countdownScale = useRef(new Animated.Value(0.82)).current;
+  const countdownTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const countdownWaitResolversRef = useRef<Array<() => void>>([]);
+  const countdownCancelledRef = useRef(false);
 
   const connected = isModelConnected();
+  const cameraReady = permission?.granted === true && cameraInitialized;
+  const running = trainingPhase === "running";
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -177,7 +193,7 @@ export default function TrainingScreen({ navigation, route }: Props) {
       });
 
       setLast(result);
-      setStatusMsg(connected ? "画面分析中" : "演示模式");
+      setStatusMsg(connected ? "画面分析中..." : "演示模式");
       if (typeof result.repCount === "number") {
         setReps(result.repCount);
       }
@@ -197,8 +213,8 @@ export default function TrainingScreen({ navigation, route }: Props) {
   const startLoop = useCallback(() => {
     if (runningRef.current) return;
     runningRef.current = true;
-    setRunning(true);
-    setStatusMsg(connected ? "后端训练分析中" : "当前为演示模式");
+    setTrainingPhase("running");
+    setStatusMsg(connected ? "后端训练分析中..." : "当前为演示模式");
     void sendFrame();
     timerRef.current = setInterval(() => {
       void sendFrame();
@@ -207,12 +223,122 @@ export default function TrainingScreen({ navigation, route }: Props) {
 
   const stopLoop = useCallback(() => {
     runningRef.current = false;
-    setRunning(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
   }, []);
+
+  const clearCountdown = useCallback(() => {
+    countdownCancelledRef.current = true;
+
+    for (const timer of countdownTimersRef.current) {
+      clearTimeout(timer);
+    }
+    countdownTimersRef.current = [];
+
+    const pendingResolvers = [...countdownWaitResolversRef.current];
+    countdownWaitResolversRef.current = [];
+    for (const resolve of pendingResolvers) {
+      resolve();
+    }
+
+    countdownOpacity.stopAnimation();
+    countdownScale.stopAnimation();
+    countdownOpacity.setValue(0);
+    countdownScale.setValue(0.82);
+    setCountdownStep(null);
+  }, [countdownOpacity, countdownScale]);
+
+  const waitForCountdownBeat = useCallback((ms: number) => {
+    return new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setTimeout>;
+
+      const wrappedResolve = () => {
+        countdownTimersRef.current = countdownTimersRef.current.filter((item) => item !== timer);
+        countdownWaitResolversRef.current = countdownWaitResolversRef.current.filter(
+          (item) => item !== wrappedResolve
+        );
+        resolve();
+      };
+
+      timer = setTimeout(wrappedResolve, ms);
+      countdownTimersRef.current.push(timer);
+      countdownWaitResolversRef.current.push(wrappedResolve);
+    });
+  }, []);
+
+  const animateCountdownStep = useCallback(
+    (step: CountdownStep) => {
+      setCountdownStep(step);
+      countdownOpacity.setValue(0);
+      countdownScale.setValue(step === "Go!" ? 0.72 : 0.82);
+
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(countdownOpacity, {
+            toValue: 1,
+            duration: 160,
+            useNativeDriver: true,
+          }),
+          Animated.timing(countdownOpacity, {
+            toValue: 0,
+            duration: 280,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.spring(countdownScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [countdownOpacity, countdownScale]
+  );
+
+  const startCountdown = useCallback(async () => {
+    if (!cameraReady || trainingPhase !== "ready_to_start") {
+      return;
+    }
+
+    countdownCancelledRef.current = false;
+    setTrainingPhase("countdown");
+    setStatusMsg("跟着倒计时准备开始");
+    Speech.stop();
+
+    await runCountdownSequence({
+      onStep: async (step) => {
+        if (countdownCancelledRef.current) {
+          return;
+        }
+        animateCountdownStep(step);
+      },
+      speak: async (utterance) => {
+        if (!voiceEnabled || countdownCancelledRef.current) {
+          return;
+        }
+        Speech.stop();
+        Speech.speak(utterance, { rate: 1, pitch: 1 });
+      },
+      wait: waitForCountdownBeat,
+    });
+
+    if (countdownCancelledRef.current) {
+      return;
+    }
+
+    setCountdownStep(null);
+    startLoop();
+  }, [
+    animateCountdownStep,
+    cameraReady,
+    startLoop,
+    trainingPhase,
+    voiceEnabled,
+    waitForCountdownBeat,
+  ]);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -221,23 +347,26 @@ export default function TrainingScreen({ navigation, route }: Props) {
   }, [permission, requestPermission]);
 
   useEffect(() => {
-    if (permission?.granted && cameraInitialized) {
-      startLoop();
+    if (permission?.granted && cameraInitialized && trainingPhase === "initializing") {
+      setTrainingPhase("ready_to_start");
+      setStatusMsg("摄像头已就绪，点击开始训练");
     }
-  }, [cameraInitialized, permission?.granted, startLoop]);
+  }, [cameraInitialized, permission?.granted, trainingPhase]);
 
   useEffect(() => {
     return () => {
+      clearCountdown();
       stopLoop();
       Speech.stop();
       if (soundRef.current) {
         void soundRef.current.unloadAsync();
       }
     };
-  }, [stopLoop]);
+  }, [clearCountdown, stopLoop]);
 
   const onFinish = async () => {
     heavyHaptic();
+    clearCountdown();
     stopLoop();
     const report = await stopFormSession();
     if (report) {
@@ -247,32 +376,65 @@ export default function TrainingScreen({ navigation, route }: Props) {
     navigation.goBack();
   };
 
-  const togglePause = () => {
+  const handlePrimaryAction = useCallback(() => {
     lightHaptic();
-    if (runningRef.current) {
+
+    if (isPrimaryControlDisabled(trainingPhase, cameraReady)) {
+      return;
+    }
+
+    const nextPhase = getNextPhaseAfterPrimaryPress(trainingPhase);
+
+    if (nextPhase === "countdown") {
+      void startCountdown();
+      return;
+    }
+
+    if (nextPhase === "paused") {
+      clearCountdown();
       stopLoop();
+      setTrainingPhase("paused");
       setStatusMsg("训练已暂停");
-    } else {
+      return;
+    }
+
+    if (nextPhase === "running") {
       startLoop();
     }
-  };
+  }, [cameraReady, clearCountdown, startCountdown, startLoop, stopLoop, trainingPhase]);
 
   const handleCameraReady = () => {
     setCameraInitialized(true);
-    setStatusMsg(connected ? "摄像头已就绪，开始分析" : "摄像头已就绪");
   };
 
   const handleCameraMountError = (event: CameraMountError) => {
+    clearCountdown();
+    stopLoop();
+    setTrainingPhase("initializing");
     setCameraInitialized(false);
     setStatusMsg(`摄像头启动失败：${event.message}`);
   };
 
-  const cameraReady = permission?.granted === true && cameraInitialized;
   const tone: StatusTone = (last?.statusColor as StatusTone) ?? "idle";
   const palette = toneOf(tone);
-  const primaryCue = last?.primaryCue ?? last?.correctionText ?? "站在画面中央后开始动作。";
-  const secondaryCue = last?.secondaryCue ?? "训练中会持续更新计数、纠错和语音提示。";
-  const phaseText = last?.phase ? PHASE_LABEL[last.phase] ?? last.phase : "等待动作";
+  const primaryCue =
+    trainingPhase === "ready_to_start"
+      ? "站稳后点击开始训练，倒计时结束会自动开始计数。"
+      : last?.primaryCue ?? last?.correctionText ?? "站在画面中央后开始动作。";
+  const secondaryCue =
+    trainingPhase === "ready_to_start"
+      ? "首次开始会播报 1、2、3、Go，暂停后继续不会重复倒计时。"
+      : last?.secondaryCue ?? "训练中会持续更新计数、纠错和语音提示。";
+  const phaseText =
+    trainingPhase === "countdown"
+      ? "开始倒计时"
+      : trainingPhase === "ready_to_start"
+        ? "等待开始"
+        : last?.phase
+          ? PHASE_LABEL[last.phase] ?? last.phase
+          : "等待动作";
+  const primaryActionLabel = getPrimaryControlLabel(trainingPhase);
+  const primaryActionDisabled = isPrimaryControlDisabled(trainingPhase, cameraReady);
 
   return (
     <View style={styles.root}>
@@ -306,6 +468,23 @@ export default function TrainingScreen({ navigation, route }: Props) {
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+
+      {countdownStep ? (
+        <View pointerEvents="none" style={styles.countdownOverlay}>
+          <Animated.Text
+            style={[
+              styles.countdownText,
+              countdownStep === "Go!" && styles.countdownGoText,
+              {
+                opacity: countdownOpacity,
+                transform: [{ scale: countdownScale }],
+              },
+            ]}
+          >
+            {countdownStep}
+          </Animated.Text>
+        </View>
+      ) : null}
 
       <SafeAreaView style={styles.overlay} edges={["top", "bottom"]}>
         <View style={styles.topBar}>
@@ -352,16 +531,17 @@ export default function TrainingScreen({ navigation, route }: Props) {
 
           <View style={styles.controls}>
             <Pressable
-              onPress={togglePause}
-              disabled={!cameraReady}
+              onPress={handlePrimaryAction}
+              disabled={primaryActionDisabled}
               style={[
                 styles.controlButton,
+                primaryActionDisabled && styles.controlButtonDisabled,
                 {
                   backgroundColor: running ? "rgba(255,255,255,0.16)" : colors.accent,
                 },
               ]}
             >
-              <Text style={styles.controlText}>{running ? "暂停" : "继续"}</Text>
+              <Text style={styles.controlText}>{primaryActionLabel}</Text>
             </Pressable>
             <Pressable
               onPress={() => void onFinish()}
@@ -515,6 +695,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.darkBorder,
   },
+  controlButtonDisabled: {
+    opacity: 0.55,
+  },
   finishButton: {
     backgroundColor: "rgba(255,77,79,0.92)",
     borderColor: "transparent",
@@ -526,5 +709,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
     minHeight: 20,
+  },
+  countdownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(8,11,16,0.36)",
+  },
+  countdownText: {
+    color: "#fff",
+    fontSize: 112,
+    fontWeight: "900",
+    letterSpacing: -4,
+    textAlign: "center",
+  },
+  countdownGoText: {
+    color: colors.accent,
   },
 });
