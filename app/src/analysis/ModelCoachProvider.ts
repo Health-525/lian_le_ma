@@ -30,7 +30,13 @@ const EXERCISE_TO_MODEL: Record<SupportedExercise, string> = {
   squat: "squats",
   lunge: "lunges",
   push_up: "pushups",
-  overhead_press: "dumbbell_shoulder_press",
+  dumbbell_shoulder_press: "dumbbell_shoulder_press",
+  dumbbell_rows: "dumbbell_rows",
+  bicep_curls: "bicep_curls",
+  situps: "situps",
+  tricep_extensions: "tricep_extensions",
+  lateral_shoulder_raises: "lateral_shoulder_raises",
+  jumping_jacks: "jumping_jacks",
 };
 
 interface FrameResponse {
