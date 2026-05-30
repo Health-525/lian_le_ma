@@ -283,26 +283,8 @@ export function playSquatFeedback(
   // 同一 rep 不重复触发鼓励（避免同帧多次调用）
   if (rep === lastEncourageRep) return;
 
-  // 里程碑（精确匹配，优先于每5个）
-  if (consecutiveGood === 10) {
-    lastEncourageRep = rep;
-    enqueue("squat_streak_10", PRIO_ENCOURAGE); return;
-  }
-  if (consecutiveGood === 8) {
-    lastEncourageRep = rep;
-    enqueue("squat_streak_8", PRIO_ENCOURAGE); return;
-  }
-  if (consecutiveGood === 5) {
-    lastEncourageRep = rep;
-    enqueue("squat_streak_5", PRIO_ENCOURAGE); return;
-  }
-  if (consecutiveGood === 3) {
-    lastEncourageRep = rep;
-    enqueue("squat_streak_3", PRIO_ENCOURAGE); return;
-  }
-
-  // 每 5 个标准动作播一条鼓励（里程碑之外的）
-  if (consecutiveGood > 10 && consecutiveGood % 5 === 0) {
+  // 每 5 个标准动作播一条鼓励
+  if (consecutiveGood % 5 === 0) {
     lastEncourageRep = rep;
     const key = SQUAT_GOOD_FILES[squat_good_idx % SQUAT_GOOD_FILES.length]!;
     squat_good_idx += 1;
